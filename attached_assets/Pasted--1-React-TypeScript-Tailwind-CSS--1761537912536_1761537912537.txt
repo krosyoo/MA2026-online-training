@@ -1,0 +1,245 @@
+ 마하나임 온라인 훈련 시스템
+1. 프로젝트 개요
+프로젝트명: 마하나임 온라인 훈련 시스템
+목표: React, TypeScript, Tailwind CSS를 사용하여 종합적인 온라인 학습 플랫폼을 구축합니다. 이 플랫폼은 학기 기반의 체계적인 신앙 훈련 커리큘럼을 제공하며, 사용자는 강의를 탐색하고 수강 신청을 할 수 있습니다. 관리자 계정은 강의 콘텐츠를 수정할 수 있는 기능을 가집니다. 백엔드 없이, 미리 정의된 목업(mock) 데이터를 사용하는 단일 페이지 애플리케이션(SPA)으로 제작합니다.
+2. 핵심 기술 및 개발 환경
+프레임워크: React (TypeScript 사용)
+라우팅: react-router-dom
+스타일링: Tailwind CSS. 아래 명시된 커스텀 색상 테마를 적용해주세요.
+UI 언어: 모든 텍스트는 한국어로 표시합니다.
+3. 파일 구조
+index.html: 앱의 진입점
+index.tsx: React 앱 렌더링
+App.tsx: 메인 컴포넌트, 라우팅 및 전역 상태 관리
+types.ts: 모든 TypeScript 인터페이스 정의
+data.ts: 초기 목업 데이터
+components/: 재사용 가능한 컴포넌트 디렉토리 (Header.tsx, Footer.tsx, Icons.tsx 등)
+pages/: 페이지 단위 컴포넌트 디렉토리 (LandingPage.tsx, CoursesPage.tsx 등)
+4. 데이터 모델 (types.ts 및 data.ts)
+인터페이스 정의 (types.ts):
+Book: title, author(선택), publisher, link, coverImage(선택)
+Course: id(숫자), title, weeks, description, instructor, videoUrl
+Semester: id(숫자), title, subtitle, description, courses(Course 배열), books(강의/필수/추천 도서 객체)
+User: id(문자열), email, name, role('student' | 'admin'), enrolledCourses(강의 ID 배열)
+초기 데이터 (data.ts):
+INITIAL_SEMESTERS: Semester 인터페이스에 맞춰 총 4학기 분량의 데이터를 생성합니다. 각 학기에는 여러 개의 강의와 도서 정보가 포함되어야 합니다.
+App.tsx 내부에 MOCK_USERS 배열을 만들어 'admin' 역할과 'student' 역할의 사용자를 최소 1명씩 포함시킵니다.
+5. 앱 구조 및 전역 상태 관리 (App.tsx)
+React Context API 활용:
+AuthContext: 현재 로그인된 user 상태를 관리합니다. login, logout, signup, enrollCourse (수강 신청), unenrollCourse (수강 취소) 함수를 제공하여 목업 사용자 데이터와 상태를 조작합니다.
+DataContext: semesters 데이터를 관리합니다. semesters와 setSemesters를 제공하여 관리자 페이지에서 데이터를 수정할 수 있게 합니다.
+라우팅 (react-router-dom):
+/: 랜딩 페이지
+/courses: 전체 강의 목록 페이지
+/course/:courseId: 강의 상세 페이지
+/my-status: 나의 수강 현황 페이지
+/admin: 관리자 페이지
+/auth: 로그인/회원가입 페이지
+기본 레이아웃: Header, 페이지별 main 콘텐츠, Footer 구조로 구성합니다.
+6. 핵심 컴포넌트 상세 (components/)
+Header.tsx:
+상단에 고정되는 헤더로, 브랜드 로고와 시스템 이름을 표시합니다.
+네비게이션 링크는 "홈", "전체 강의"를 기본으로 포함합니다.
+사용자 로그인 상태에 따라 조건부로 링크를 표시합니다.
+로그인 시: "나의 수강현황", "로그아웃" 버튼 표시
+관리자 로그인 시: "관리자" 링크 추가 표시
+로그아웃 시: "로그인/가입" 링크 표시
+모바일 환경을 위해 햄버거 메뉴 아이콘을 포함한 반응형 디자인을 적용합니다.
+Footer.tsx:
+간단한 저작권 정보를 표시하는 푸터를 만듭니다.
+Icons.tsx:
+앱 전반에서 사용할 SVG 아이콘 컴포넌트를 만듭니다. (예: BookOpenIcon, VideoCameraIcon, UserCircleIcon, LoginIcon, LogoutIcon 등)
+7. 페이지별 기능 명세 (pages/)
+LandingPage.tsx:
+시스템의 정체성을 보여주는 히어로 섹션(제목, 설명, "강의 둘러보기", "회원가입" 버튼)을 만듭니다.
+아래에는 각 학기별 정보를 순차적으로 나열합니다.
+각 학기 섹션에는 학기명, 설명과 함께 '강의 도서', '필수 도서', '추천 도서' 목록을 카드 형태로 보여줍니다.
+도서 카드는 임의의 이미지, 제목, 출판사, 외부 구매 링크를 포함합니다.
+AuthPage.tsx:
+로그인과 회원가입 기능을 하나의 페이지에서 토글 형태로 제공합니다.
+회원가입 폼은 이름, 이메일, 비밀번호 필드를, 로그인 폼은 이메일, 비밀번호 필드를 가집니다.
+로그인/회원가입 실패 시(예: 존재하지 않는 사용자, 이미 사용 중인 이메일) 에러 메시지를 표시합니다.
+인증 성공 시 '나의 수강현황' 페이지로 리디렉션합니다.
+CoursesPage.tsx:
+전체 강의 목록을 보여주는 페이지입니다.
+학기별로 구분하여 하위에 해당 학기의 모든 강의를 목록 형태로 나열합니다.
+각 강의 항목은 제목, 기간, 설명을 포함하며, 클릭 시 해당 강의의 상세 페이지로 이동합니다.
+CourseDetailPage.tsx:
+URL 파라미터(:courseId)를 기반으로 특정 강의의 상세 정보를 표시합니다.
+강의명, 강사, 기간 정보를 보여줍니다.
+가장 중요한 기능으로, videoUrl을 사용해 YouTube 영상을 임베드합니다. 이 컴포넌트는 일반 영상(watch?v=), 재생목록(playlist?list=), 짧은 URL(youtu.be/), Shorts 영상(shorts/) 등 다양한 형태의 YouTube URL을 모두 처리할 수 있어야 합니다.
+강의 자료 다운로드 섹션(현재는 UI만 구현)과 수강 신청 섹션을 만듭니다.
+로그인 사용자는 현재 수강 상태에 따라 '수강 신청' 또는 '수강 취소' 버튼을 볼 수 있습니다.
+비로그인 사용자에게는 로그인을 유도하는 메시지를 표시합니다.
+MyStatusPage.tsx:
+로그인한 사용자만 접근할 수 있는 페이지입니다.
+사용자 이름과 함께 현재 수강 중인 모든 강의 목록을 표시합니다.
+각 강의에 대해 제목, 강사, 임의의 진척도를 나타내는 프로그레스 바, 그리고 강의실로 바로 갈 수 있는 링크("강의실 입장")를 제공합니다.
+수강 중인 강의가 없으면 강의 목록 페이지로 이동을 유도하는 메시지를 표시합니다.
+AdminPage.tsx:
+'admin' 역할을 가진 사용자만 접근할 수 있습니다. 권한이 없으면 접근 거부 메시지를 보여줍니다.
+학기 및 강의 정보를 수정할 수 있는 관리자 대시보드를 제공합니다.
+각 학기와 강의의 텍스트 정보(제목, 설명, 강사, 영상 URL 등)를 input 필드를 통해 직접 수정할 수 있습니다.
+'변경사항 저장' 버튼을 누르면 DataContext의 setSemesters 함수를 호출하여 앱의 전역 상태를 업데이트합니다.
+8. 스타일링 가이드 (Tailwind CSS)
+index.html 내 스크립트 태그 또는 tailwind.config.js를 통해 아래 커스텀 색상 팔레트를 정의합니다.
+brand-primary: '#0D47A1' (진한 파랑)
+brand-secondary: '#1976D2' (중간 파랑)
+brand-accent: '#42A5F5' (밝은 파랑)
+brand-light: '#E3F2FD' (매우 밝은 파랑/회백색)
+brand-dark: '#0B3B84' (더 진한 파랑)
+카드 디자인, 그림자 효과, 적절한 여백을 사용하여 깔끔하고 전문적인 UI를 구현합니다.
+모든 버튼과 링크 등 상호작용 가능한 요소에는 마우스 호버(hover) 효과를 적용합니다.
+애플리케이션 전체가 모바일과 데스크톱 화면 모두에서 자연스럽게 보이는 반응형 디자인을 적용합니다.
+
+
+
+ 마하나임 온라인 훈련 시스템 (콘텐츠 포함 최종 버전)
+1. 프로젝트 개요
+프로젝트명: 마하나임 온라인 훈련 시스템
+핵심 목표: React, TypeScript, Tailwind CSS를 사용하여 종합적인 온라인 신앙 훈련 플랫폼을 구축합니다. 이 플랫폼은 총 4학기 과정의 커리큘럼을 제공하며, 사용자는 강의 탐색, 수강 신청 및 수강 현황 관리를 할 수 있습니다. 또한, 관리자는 강의 콘텐츠를 수정할 수 있는 기능을 가집니다. 백엔드 없이, 아래에 제공되는 목업 데이터를 사용하여 단일 페이지 애플리케이션(SPA)으로 제작합니다. 모든 UI 텍스트는 한국어로 표시합니다.
+2. 핵심 기술 및 개발 환경
+프레임워크: React (TypeScript 사용)
+라우팅: react-router-dom
+스타일링: Tailwind CSS (제공된 커스텀 색상 테마 적용)
+상태 관리: React Context API
+3. 애플리케이션 구조 및 기능 명세
+전역 상태:
+AuthContext: 현재 로그인된 사용자 정보(user), login, logout, signup, enrollCourse, unenrollCourse 함수를 관리합니다. 목업 사용자 데이터(MOCK_USERS)를 App.tsx 내부에 정의하여 인증 로직을 시뮬레이션합니다.
+DataContext: 전체 학기 및 강의 데이터(semesters)와 이를 수정하는 setSemesters 함수를 관리합니다.
+페이지 구성 (/pages):
+LandingPage.tsx: 히어로 섹션과 학기별 도서 추천 목록을 표시합니다.
+CoursesPage.tsx: 전체 강의를 학기별로 구분하여 목록 형태로 보여줍니다.
+CourseDetailPage.tsx: 특정 강의의 상세 정보, YouTube 영상 임베드, 수강 신청/취소 기능을 제공합니다. 다양한 형태의 YouTube URL(일반, 재생목록, 짧은 URL, Shorts)을 모두 처리할 수 있는 임베드 컴포넌트를 구현해야 합니다.
+MyStatusPage.tsx: 로그인한 사용자가 수강 중인 강의 목록과 임의의 진척도를 표시합니다.
+AdminPage.tsx: 'admin' 역할의 사용자가 학기 및 강의 정보를 수정할 수 있는 대시보드를 제공합니다.
+AuthPage.tsx: 로그인과 회원가입 폼을 토글 형태로 제공합니다.
+공용 컴포넌트 (/components):
+Header.tsx: 로고, 네비게이션 링크, 로그인 상태에 따른 조건부 메뉴(나의 수강현황, 관리자, 로그아웃/로그인)를 포함한 반응형 헤더.
+Footer.tsx: 저작권 정보를 표시하는 푸터.
+Icons.tsx: 앱 전반에 사용될 SVG 아이콘 집합.
+4. 핵심 데이터 콘텐츠 (data.ts 파일용)
+아래 내용을 기반으로 INITIAL_SEMESTERS 상수를 data.ts 파일에 생성해 주세요.
+학기 1: 1학기. 믿음반 (Faith Class)
+부제: Faith Class
+설명: 기초 신앙·초신자·신앙의 기초 확립
+강의 목록:
+신앙의 기초 — 하나님과 구원 이해
+기간: 8주, 강사: 서길원 목사
+설명: 기독교대한감리회 교육국: 신앙기초/입문 강의
+영상 URL: https://www.youtube.com/playlist?list=PLI37YBAmzYVawx7F7n4h-0MHL0zta99Va
+예수님과 복음
+기간: 6주, 강사: 유기성 목사
+설명: 교회·목회자 예수 복음 강해 영상
+영상 URL: https://www.youtube.com/watch?v=LqAFofgLyfI
+성경 읽기와 QT(큐티) 입문
+기간: 8주, 강사: 서길원 목사
+설명: 성경읽기 입문 공개강의/소그룹 QT 안내
+영상 URL: https://www.youtube.com/shorts/fB3ajPcvHlE
+기도(개인기도와 회개) 실습
+기간: 6주, 강사: 김선기 선교사
+설명: 기도 입문·실습 영상
+영상 URL: https://www.youtube.com/watch?v=o7kjATYoPDM
+도서 목록:
+강의 도서: { 제목: '하나님: 성부 하나님의 속성과 사역', 출판사: 'IVP', 링크: 'https://product.kyobobook.co.kr/detail/S000213962800' }
+필수 도서: { 제목: '제자훈련의 터다지기', 출판사: '규장/교회자료', 링크: 'https://www.woorichurch.org/bwoori/html/sub2012/discipline/sub03.asp' }
+추천 도서:
+{ 제목: 'IVP 기도 관련 대표서', 출판사: 'IVP', 링크: 'https://mall.godpeople.com/?G=1274831309-3' }
+{ 제목: '온가족이 함께 하는 성경관통', 출판사: '규장', 링크: 'https://mall.godpeople.com/?GO=kj_set' }
+{ 제목: '초신자용 교재(제자의 삶/기초다지기류)', 출판사: '교회 실무', 링크: 'https://atlantasiloamchurch.org/%EC%A0%9C%EC%9E%90%ED%95%99%EA%B5%90-%ED%9B%88%EB%A0%A8%EA%B3%BC%EC%A0%95' }
+{ 제목: '성경 해설 입문서', 출판사: 'IVP', 링크: 'https://ivp.co.kr/books/book_detail.html?book=s01&idx=1758' }
+{ 제목: '기도 실천서', 출판사: '규장', 링크: 'https://mall.godpeople.com/?G=1707136435-1' }
+학기 2: 2학기. 성장반 (Growth Class)
+부제: Growth Class
+설명: 신앙 성장·신행일치·영성훈련
+강의 목록:
+성령과 성결의 삶
+기간: 8주, 강사: 유기성 목사
+설명: 성령론 강의(교회·신학교 공개강의 영상 모음)
+영상 URL: https://www.youtube.com/watch?v=K7sD4ob9Hcg
+성경 깊이읽기(중급) — 구약/신약 핵심 주제
+기간: 8주, 강사: 서길원 목사
+설명: IVP·교회 강사 성경 강해 영상 플레이리스트
+영상 URL: https://www.youtube.com/watch?v=QoQ9ozVaz4Q
+기도와 영성(중급) — 규칙적 영성훈련
+기간: 8주, 강사: 김선기 선교사
+설명: 규장·교회 영성훈련 강의 영상(새벽기도/묵상법)
+영상 URL: https://www.youtube.com/watch?v=YE0IlqcGuOA
+신앙의 실천: 섬김과 봉사
+기간: 6주, 강사: 아크크루
+설명: 감리교 교육국·교회 봉사 훈련 영상 자료
+영상 URL: https://www.youtube.com/watch?v=omITNh_kvR8
+도서 목록:
+강의 도서: { 제목: '성령: 성령 하나님의 속성과 사역', 출판사: 'IVP', 링크: 'https://product.kyobobook.co.kr/detail/S000213962800' }
+필수 도서: { 제목: '성경관통/성경읽기 실천서', 출판사: '규장', 링크: 'https://mall.godpeople.com/?GO=kj_set' }
+추천 도서:
+{ 제목: '성경·영성 관련 중급서', 출판사: 'IVP', 링크: 'https://ivp.co.kr/books/book_detail.html?book=s01&idx=1758' }
+{ 제목: '영성훈련 관련 도서', 출판사: '규장', 링크: 'https://www.kyujang.com/' }
+{ 제목: '새벽기도/기도 실천서', 출판사: '규장', 링크: 'https://mall.godpeople.com/?G=1707136435-1' }
+{ 제목: '성경 해석/응용 도서 세트', 출판사: 'IVP', 링크: 'https://mall.godpeople.com/?G=1274831309-3' }
+{ 제목: '섬김·실천 관련 교회 실무서', 출판사: '규장', 링크: 'https://search.kyobobook.co.kr/search?keyword=%EA%B7%9C%EC%9E%A5&pbcmCode=PB18521' }
+학기 3: 3학기. 제자훈련반 (Discipleship Training Class)
+부제: Discipleship Training Class
+설명: 그리스도인 정체성 확립 · 제자화
+강의 목록:
+제자도의 신학적 기초
+기간: 10주, 강사: 아크크루
+설명: 제자훈련 이론·실천 강의
+영상 URL: https://www.youtube.com/watch?v=SLkag2E9Xfs
+제자훈련 실습·멤버케어
+기간: 10주, 강사: 김선기 선교사
+설명: 교회 제자훈련 사례 영상
+영상 URL: https://www.youtube.com/watch?v=r2XIamNZ114
+삶으로의 제자화 — 직장·가정 제자훈련
+기간: 8주, 강사: 서길원 목사
+설명: 목회자 사례 강의
+영상 URL: https://www.youtube.com/watch?v=JTJTCPwzhRI
+전도와 선교적 삶
+기간: 6주, 강사: 유기성 목사
+설명: 감리교 선교·전도 교육 영상
+영상 URL: https://www.youtube.com/watch?v=CNmXxILlp30
+도서 목록:
+강의 도서: { 제목: '제자훈련의 터다지기 / 제자훈련 실전교재', 출판사: '규장/교회 자체 발행', 링크: 'https://www.woorichurch.org/bwoori/html/sub2012/discipline/sub03.asp' }
+필수 도서: { 제목: '제자도/제자훈련 입문서', 출판사: 'IVP 또는 규장', 링크: 'https://ivp.co.kr' }
+추천 도서:
+{ 제목: '제자도·제자훈련 관련 지정도서', 출판사: 'IVP', 링크: 'https://ivp.co.kr' }
+{ 제목: '제자훈련 사례집', 출판사: '규장', 링크: 'https://search.kyobobook.co.kr/search?keyword=%EA%B7%9C%EC%9E%A5&pbcmCode=PB18521' }
+{ 제목: '멘토링·양육 실무서', 출판사: '규장', 링크: 'https://mall.godpeople.com/?GO=kj_set' }
+{ 제목: '소그룹·리더십·양육 관련 도서 세트', 출판사: 'IVP', 링크: 'https://mall.godpeople.com/?G=1274831309-3' }
+{ 제목: '전도·선교 실천서', 출판사: '규장', 링크: 'https://www.kyujang.com/' }
+학기 4: 4학기. 리더반 (Leader Class)
+부제: Leader Class
+설명: 교회·소그룹·목회 리더 양성
+강의 목록:
+영적리더십 — 목회자/평신도 리더십 원리
+기간: 10주, 강사: 유기성 목사
+설명: 감리회·교회·신학교 리더십 강의
+영상 URL: https://www.youtube.com/watch?v=R1ByQVG1jP0
+셀리더 지침서
+기간: 8주, 강사: 김선기 선교사
+설명: 청년교구 행정·운영 강의
+영상 URL: https://www.youtube.com/watch?v=41mN9D6sj-w
+나눔과 제자훈련 리딩
+기간: 10주, 강사: 서길원 목사
+설명: 나눔, 제자훈련법 강의
+영상 URL: https://www.youtube.com/playlist?list=PLXmYgvea7T2t_unaH2w6iW0r1sJ8s_s-C
+윤리·영성관리
+기간: 6주, 강사: 아크크루
+설명: 리더 영성관리·윤리 강의
+영상 URL: https://www.youtube.com/playlist?list=PLOG59PQmLXWiMOGsTGQODkHX5OXLtRIDa
+도서 목록:
+강의 도서: { 제목: '리더십·목회사역 관련 대표서', 출판사: 'IVP 또는 규장', 링크: 'https://ivp.co.kr' }
+필수 도서: { 제목: '교회운영·목회실무 필독서', 출판사: '규장', 링크: 'https://www.kyujang.com/' }
+추천 도서:
+{ 제목: '목회·설교·리더십 관련 도서', 출판사: 'IVP', 링크: 'https://ivp.co.kr' }
+{ 제목: '리더 훈련·목회 실무서', 출판사: '규장', 링크: 'https://search.kyobobook.co.kr/search?keyword=%EA%B7%9C%EC%9E%A5&pbcmCode=PB18521' }
+{ 제목: '영성관리/목회자 기도서', 출판사: '규장', 링크: 'https://mall.godpeople.com/?G=1707136435-1' }
+{ 제목: '교회론·공동체 신학서', 출판사: 'IVP', 링크: 'https://ivp.co.kr' }
+{ 제목: '소그룹·제자훈련 심화서', 출판사: '규장', 링크: 'https://mall.godpeople.com/?GO=kj_set' }
+5. 스타일링 가이드
+카드 컴포넌트, 그림자, 패딩, 마진 등을 활용하여 시각적으로 깔끔하고 전문적인 UI를 구현합니다.
+모든 상호작용 가능한 요소(버튼, 링크 등)에는 호버(hover) 및 포커스(focus) 효과를 적용하여 사용자 경험을 향상시킵니다.
+모바일, 태블릿, 데스크톱 환경 모두에서 최적화된 화면을 보여주는 반응형 디자인을 적용합니다.
+
+
+작동되지 않는 유튜브나 웹링크는 검색하여 올바른 주소로 갱신해줘.
