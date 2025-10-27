@@ -51,8 +51,8 @@ export function YouTubeEmbed({ url, title }: YouTubeEmbedProps) {
 
   if (!embedUrl) {
     return (
-      <div className="w-full aspect-video bg-gray-100 rounded-lg flex items-center justify-center">
-        <p className="text-gray-500">유효하지 않은 YouTube URL입니다.</p>
+      <div className="w-full aspect-video bg-gray-100 rounded-lg flex items-center justify-center" data-testid="youtube-error">
+        <p className="text-gray-500" data-testid="text-youtube-error">유효하지 않은 YouTube URL입니다.</p>
       </div>
     );
   }

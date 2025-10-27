@@ -26,8 +26,8 @@ export function AdminPage({ user, semesters, onSave }: AdminPageProps) {
             <div className="inline-flex items-center justify-center p-3 bg-destructive/10 rounded-full mb-4">
               <Shield className="h-8 w-8 text-destructive" />
             </div>
-            <h1 className="text-3xl font-bold text-foreground mb-4">접근 권한이 없습니다</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-3xl font-bold text-foreground mb-4" data-testid="text-access-denied">접근 권한이 없습니다</h1>
+            <p className="text-muted-foreground" data-testid="text-access-denied-message">
               이 페이지는 관리자만 접근할 수 있습니다.
             </p>
           </div>
@@ -83,7 +83,7 @@ export function AdminPage({ user, semesters, onSave }: AdminPageProps) {
             <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-2" data-testid="text-page-title">
               관리자 대시보드
             </h1>
-            <p className="text-lg text-muted-foreground">
+            <p className="text-lg text-muted-foreground" data-testid="text-page-description">
               학기 및 강의 정보를 수정할 수 있습니다.
             </p>
           </div>
@@ -95,7 +95,7 @@ export function AdminPage({ user, semesters, onSave }: AdminPageProps) {
                 <div className="p-6">
                   {/* Semester Info */}
                   <div className="mb-6 pb-6 border-b">
-                    <h2 className="text-2xl font-bold text-foreground mb-4">
+                    <h2 className="text-2xl font-bold text-foreground mb-4" data-testid={`text-semester-title-${semester.id}`}>
                       {semester.title}
                     </h2>
                     <div className="grid grid-cols-1 gap-4">
@@ -131,7 +131,7 @@ export function AdminPage({ user, semesters, onSave }: AdminPageProps) {
 
                   {/* Courses */}
                   <div>
-                    <h3 className="text-xl font-semibold text-foreground mb-4">강의 목록</h3>
+                    <h3 className="text-xl font-semibold text-foreground mb-4" data-testid={`text-courses-heading-${semester.id}`}>강의 목록</h3>
                     <div className="space-y-6">
                       {semester.courses.map((course) => (
                         <div
