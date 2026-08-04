@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'wouter';
-import { Menu, X, BookOpen, LogOut, LogIn } from 'lucide-react';
+import { Menu, X, BookOpen, LogOut, LogIn, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface HeaderProps {
-  user: { name: string; role: 'student' | 'admin' } | null;
+  user: {
+    name: string;
+    role: 'student' | 'admin';
+    mustChangePassword?: boolean;
+  } | null;
   onLogout: () => void;
 }
 
@@ -79,7 +83,21 @@ export function Header({ user, onLogout }: HeaderProps) {
                 )}
                 
                 <div className="flex items-center gap-2 ml-2 pl-2 border-l">
-                  <span className="text-sm text-gray-600" data-testid="text-username">{user.name}</span>
+                  <Link href="/profile">
+                    <span
+                      className={`px-3 py-2 rounded-md text-sm font-medium transition-all hover-elevate cursor-pointer inline-flex items-center gap-1 ${
+                        isActive('/profile')
+                          ? 'bg-brand-light text-brand-primary'
+                          : 'text-gray-700'
+                      }`}
+                      data-testid="link-profile"
+                    >
+                      {user.mustChangePassword && (
+                        <AlertTriangle className="h-4 w-4 text-destructive" data-testid="icon-must-change-password" />
+                      )}
+                      <span data-testid="text-username">{user.name}</span>
+                    </span>
+                  </Link>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -171,6 +189,23 @@ export function Header({ user, onLogout }: HeaderProps) {
                     </Link>
                   )}
                   
+                  <Link href="/profile">
+                    <span
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all hover-elevate cursor-pointer inline-flex items-center gap-1 w-full ${
+                        isActive('/profile')
+                          ? 'bg-brand-light text-brand-primary'
+                          : 'text-gray-700'
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                      data-testid="link-mobile-profile"
+                    >
+                      {user.mustChangePassword && (
+                        <AlertTriangle className="h-4 w-4 text-destructive" />
+                      )}
+                      내 정보
+                    </span>
+                  </Link>
+
                   <div className="px-4 py-2 border-t mt-2 pt-4">
                     <p className="text-sm text-gray-600 mb-2" data-testid="text-mobile-username">{user.name}</p>
                     <Button

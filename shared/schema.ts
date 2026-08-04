@@ -19,6 +19,16 @@ export const users = pgTable("users", {
   role: text("role", { enum: ["student", "admin"] })
     .notNull()
     .default("student"),
+  /**
+   * Bumped whenever a session must be cut short — password change, admin
+   * reset, or role change. It is embedded in the JWT and re-checked against
+   * this column on every request, so an old cookie stops working the moment
+   * the value moves. Without it, resetting a compromised account's password
+   * would leave the attacker's existing cookie valid until it expired.
+   */
+  tokenVersion: integer("token_version").notNull().default(0),
+  /** Set when an admin issues a temporary password; cleared on self-change. */
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
   failedAttempts: integer("failed_attempts").notNull().default(0),
   lockedUntil: timestamp("locked_until"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -180,6 +190,17 @@ export const courseCreateSchema = z.object({
 /** Admin-initiated reset. Omit `password` to have the server generate one. */
 export const adminResetPasswordSchema = z.object({
   password: z.string().min(6).optional(),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "현재 비밀번호를 입력해주세요."),
+  newPassword: z
+    .string()
+    .min(8, "새 비밀번호는 최소 8자 이상이어야 합니다."),
+});
+
+export const adminUpdateUserSchema = z.object({
+  role: z.enum(["student", "admin"]),
 });
 
 export type SignupInput = z.infer<typeof signupSchema>;

@@ -246,15 +246,19 @@ export async function getUserById(id: string): Promise<UserRow | undefined> {
   return row;
 }
 
-export async function getUserRole(
+/**
+ * The two fields every request needs to validate a session cookie: the live
+ * role (so demotions apply at once) and the tokenVersion the cookie must match.
+ */
+export async function getSessionSecurity(
   id: string,
-): Promise<"student" | "admin" | undefined> {
+): Promise<{ role: "student" | "admin"; tokenVersion: number } | undefined> {
   const [row] = await getDb()
-    .select({ role: users.role })
+    .select({ role: users.role, tokenVersion: users.tokenVersion })
     .from(users)
     .where(eq(users.id, id))
     .limit(1);
-  return row?.role;
+  return row;
 }
 
 export async function createUser(input: {
@@ -311,16 +315,59 @@ export async function listUsers(): Promise<AdminUserSummary[]> {
   }));
 }
 
+/**
+ * Sets a new password hash and bumps tokenVersion, which invalidates every
+ * session already issued for the account — the point of a reset is to lock out
+ * whoever had the old credentials.
+ *
+ * `mustChangePassword` marks admin-issued temporary passwords so the UI can
+ * push the user to pick their own.
+ */
 export async function setUserPassword(
   userId: string,
   passwordHash: string,
+  options: { mustChangePassword: boolean },
+): Promise<number> {
+  // A reset also clears any lockout — there is no reason to make someone wait
+  // out a lock whose cause was just fixed.
+  const [row] = await getDb()
+    .update(users)
+    .set({
+      password: passwordHash,
+      mustChangePassword: options.mustChangePassword,
+      tokenVersion: sql`${users.tokenVersion} + 1`,
+      failedAttempts: 0,
+      lockedUntil: null,
+    })
+    .where(eq(users.id, userId))
+    .returning({ tokenVersion: users.tokenVersion });
+  return row.tokenVersion;
+}
+
+/**
+ * Changes a role and rotates tokenVersion so a demoted admin's open tabs lose
+ * their elevated access immediately rather than at cookie expiry.
+ */
+export async function setUserRole(
+  userId: string,
+  role: "student" | "admin",
 ): Promise<void> {
-  // A reset also clears any lockout — there is no reason to make an admin
-  // wait out a lock they just fixed the cause of.
   await getDb()
     .update(users)
-    .set({ password: passwordHash, failedAttempts: 0, lockedUntil: null })
+    .set({ role, tokenVersion: sql`${users.tokenVersion} + 1` })
     .where(eq(users.id, userId));
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  await getDb().delete(users).where(eq(users.id, userId));
+}
+
+export async function countAdmins(): Promise<number> {
+  const [row] = await getDb()
+    .select({ count: sql<number>`count(*)::int` })
+    .from(users)
+    .where(eq(users.role, "admin"));
+  return row?.count ?? 0;
 }
 
 /**
@@ -359,6 +406,7 @@ export async function getSessionUser(id: string): Promise<User | undefined> {
       email: users.email,
       name: users.name,
       role: users.role,
+      mustChangePassword: users.mustChangePassword,
     })
     .from(users)
     .where(eq(users.id, id))

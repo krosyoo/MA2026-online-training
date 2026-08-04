@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import type { NextFunction, Request, Response } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import { ConfigurationError, sessionSecret } from "./env";
-import { getUserRole } from "./storage";
+import { getSessionSecurity } from "./storage";
 
 const scrypt = promisify(scryptCallback) as (
   password: string,
@@ -22,6 +22,8 @@ const KEY_LENGTH = 64;
 export interface SessionUser {
   id: string;
   role: "student" | "admin";
+  /** Must still match the account's current tokenVersion to be honoured. */
+  tokenVersion: number;
 }
 
 declare module "express-serve-static-core" {
@@ -79,7 +81,7 @@ export async function verifyPassword(
 }
 
 export async function createSessionToken(user: SessionUser): Promise<string> {
-  return new SignJWT({ role: user.role })
+  return new SignJWT({ role: user.role, tv: user.tokenVersion })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(user.id)
     .setIssuedAt()
@@ -90,10 +92,11 @@ export async function createSessionToken(user: SessionUser): Promise<string> {
 async function readSessionToken(token: string): Promise<SessionUser | null> {
   try {
     const { payload } = await jwtVerify(token, getSecret());
-    if (!payload.sub) return null;
+    if (!payload.sub || typeof payload.tv !== "number") return null;
     return {
       id: payload.sub,
       role: payload.role === "admin" ? "admin" : "student",
+      tokenVersion: payload.tv,
     };
   } catch {
     return null;
@@ -119,15 +122,37 @@ export function clearSessionCookie(res: Response): void {
   });
 }
 
+/**
+ * Resolves the session from the cookie. A structurally valid token is still
+ * rejected when its tokenVersion has moved on, which is what makes a password
+ * reset or a role change take effect immediately rather than when the cookie
+ * eventually expires.
+ */
 export async function attachSession(
   req: Request,
   _res: Response,
   next: NextFunction,
 ): Promise<void> {
   const token = req.cookies?.[SESSION_COOKIE];
-  if (typeof token === "string" && token.length > 0) {
-    req.auth = (await readSessionToken(token)) ?? undefined;
+  if (typeof token !== "string" || token.length === 0) {
+    next();
+    return;
   }
+
+  const claims = await readSessionToken(token);
+  if (!claims) {
+    next();
+    return;
+  }
+
+  const account = await getSessionSecurity(claims.id);
+  if (!account || account.tokenVersion !== claims.tokenVersion) {
+    next();
+    return;
+  }
+
+  // Trust the database for the role so a demotion applies at once.
+  req.auth = { ...claims, role: account.role };
   next();
 }
 
@@ -144,21 +169,19 @@ export function requireAuth(
 }
 
 /**
- * The role inside the token can go stale if an account is demoted, so admin
- * access is re-checked against the database on every privileged request.
+ * `attachSession` already resolved the role from the database rather than the
+ * token, so a demotion is reflected here without another round trip.
  */
-export async function requireAdmin(
+export function requireAdmin(
   req: Request,
   res: Response,
   next: NextFunction,
-): Promise<void> {
+): void {
   if (!req.auth) {
     res.status(401).json({ message: "로그인이 필요합니다." });
     return;
   }
-
-  const role = await getUserRole(req.auth.id);
-  if (role !== "admin") {
+  if (req.auth.role !== "admin") {
     res.status(403).json({ message: "관리자만 접근할 수 있습니다." });
     return;
   }

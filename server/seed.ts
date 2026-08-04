@@ -3,7 +3,12 @@ import { getDb } from "./db";
 import { books, courses, semesters } from "../shared/schema";
 import { INITIAL_SEMESTERS } from "../shared/data";
 import { hashPassword } from "./auth";
-import { createUser, getUserByEmail } from "./storage";
+import {
+  createUser,
+  getUserByEmail,
+  setUserPassword,
+  setUserRole,
+} from "./storage";
 
 export interface SeedResult {
   seeded: boolean;
@@ -96,7 +101,19 @@ export async function ensureAdmin(): Promise<boolean> {
   if (password.length < 6) {
     throw new Error("ADMIN_PASSWORD must be at least 6 characters.");
   }
-  if (await getUserByEmail(email)) return false;
+
+  const existing = await getUserByEmail(email);
+  if (existing) {
+    // Recovery path: if admin access was lost, setting ADMIN_EMAIL to an
+    // existing account and re-running the seed promotes it and resets its
+    // password, rather than silently doing nothing.
+    if (existing.role === "admin") return false;
+    await setUserRole(existing.id, "admin");
+    await setUserPassword(existing.id, await hashPassword(password), {
+      mustChangePassword: false,
+    });
+    return true;
+  }
 
   await createUser({
     email,
