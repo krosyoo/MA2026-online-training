@@ -28,11 +28,11 @@ export interface Semester {
   };
 }
 
+/** The user as it is sent to the browser — never carries the password hash. */
 export interface User {
   id: string;
   email: string;
   name: string;
-  password: string;
   role: 'student' | 'admin';
   enrolledCourses: number[];
 }

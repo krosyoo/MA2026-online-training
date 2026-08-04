@@ -11,12 +11,13 @@ import { useToast } from '@/hooks/use-toast';
 interface AdminPageProps {
   user: User | null;
   semesters: Semester[];
-  onSave: (semesters: Semester[]) => void;
+  onSave: (semesters: Semester[]) => Promise<void>;
 }
 
 export function AdminPage({ user, semesters, onSave }: AdminPageProps) {
   const { toast } = useToast();
   const [editedSemesters, setEditedSemesters] = useState<Semester[]>(semesters);
+  const [isSaving, setIsSaving] = useState(false);
 
   if (!user || user.role !== 'admin') {
     return (
@@ -63,12 +64,23 @@ export function AdminPage({ user, semesters, onSave }: AdminPageProps) {
     );
   };
 
-  const handleSave = () => {
-    onSave(editedSemesters);
-    toast({
-      title: '변경사항 저장 완료',
-      description: '모든 학기 및 강의 정보가 업데이트되었습니다.',
-    });
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(editedSemesters);
+      toast({
+        title: '변경사항 저장 완료',
+        description: '모든 학기 및 강의 정보가 업데이트되었습니다.',
+      });
+    } catch {
+      toast({
+        title: '저장 실패',
+        description: '변경사항을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -201,11 +213,12 @@ export function AdminPage({ user, semesters, onSave }: AdminPageProps) {
             <Button
               size="lg"
               onClick={handleSave}
+              disabled={isSaving}
               className="gap-2"
               data-testid="button-save"
             >
               <Save className="h-5 w-5" />
-              변경사항 저장
+              {isSaving ? '저장 중…' : '변경사항 저장'}
             </Button>
           </div>
         </div>

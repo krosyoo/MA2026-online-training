@@ -8,10 +8,15 @@ import { Card } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { LogIn, UserPlus } from 'lucide-react';
+import type { AuthResult } from '@/contexts/AuthContext';
 
 interface AuthPageProps {
-  onLogin: (email: string, password: string) => boolean;
-  onSignup: (email: string, password: string, name: string) => boolean;
+  onLogin: (email: string, password: string) => Promise<AuthResult>;
+  onSignup: (
+    email: string,
+    password: string,
+    name: string,
+  ) => Promise<AuthResult>;
 }
 
 const loginSchema = z.object({
@@ -32,6 +37,7 @@ export function AuthPage({ onLogin, onSignup }: AuthPageProps) {
   const [, setLocation] = useLocation();
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loginForm = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -50,23 +56,29 @@ export function AuthPage({ onLogin, onSignup }: AuthPageProps) {
     },
   });
 
-  const handleLogin = (values: LoginFormValues) => {
+  const handleLogin = async (values: LoginFormValues) => {
     setError('');
-    const success = onLogin(values.email, values.password);
-    if (success) {
+    setIsSubmitting(true);
+    const result = await onLogin(values.email, values.password);
+    setIsSubmitting(false);
+
+    if (result.ok) {
       setLocation('/my-status');
     } else {
-      setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+      setError(result.message || '이메일 또는 비밀번호가 올바르지 않습니다.');
     }
   };
 
-  const handleSignup = (values: SignupFormValues) => {
+  const handleSignup = async (values: SignupFormValues) => {
     setError('');
-    const success = onSignup(values.email, values.password, values.name);
-    if (success) {
+    setIsSubmitting(true);
+    const result = await onSignup(values.email, values.password, values.name);
+    setIsSubmitting(false);
+
+    if (result.ok) {
       setLocation('/my-status');
     } else {
-      setError('이미 사용 중인 이메일입니다.');
+      setError(result.message || '회원가입에 실패했습니다.');
     }
   };
 
@@ -110,8 +122,13 @@ export function AuthPage({ onLogin, onSignup }: AuthPageProps) {
               </div>
 
               {/* Login Form */}
+              {/* The two branches render the same component types in the same
+                  positions, so without distinct keys React reconciles the login
+                  form's Controllers into the signup form's instead of
+                  remounting them. The fields then stay bound to the previous
+                  form's control and silently reject all input. */}
               {isLogin ? (
-                <Form {...loginForm}>
+                <Form key="login" {...loginForm}>
                   <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
                     <FormField
                       control={loginForm.control}
@@ -159,16 +176,17 @@ export function AuthPage({ onLogin, onSignup }: AuthPageProps) {
 
                     <Button
                       type="submit"
+                      disabled={isSubmitting}
                       className="w-full gap-2"
                       data-testid="button-submit"
                     >
                       <LogIn className="h-4 w-4" />
-                      로그인
+                      {isSubmitting ? '로그인 중…' : '로그인'}
                     </Button>
                   </form>
                 </Form>
               ) : (
-                <Form {...signupForm}>
+                <Form key="signup" {...signupForm}>
                   <form onSubmit={signupForm.handleSubmit(handleSignup)} className="space-y-4">
                     <FormField
                       control={signupForm.control}
@@ -235,11 +253,12 @@ export function AuthPage({ onLogin, onSignup }: AuthPageProps) {
 
                     <Button
                       type="submit"
+                      disabled={isSubmitting}
                       className="w-full gap-2"
                       data-testid="button-submit"
                     >
                       <UserPlus className="h-4 w-4" />
-                      회원가입
+                      {isSubmitting ? '가입 중…' : '회원가입'}
                     </Button>
                   </form>
                 </Form>

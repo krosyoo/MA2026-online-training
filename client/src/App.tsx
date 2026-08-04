@@ -1,4 +1,5 @@
 import { Switch, Route } from "wouter";
+import { Loader2 } from "lucide-react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -16,8 +17,33 @@ import { AuthPage } from "@/pages/AuthPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
-  const { user, login, logout, signup, enrollCourse, unenrollCourse } = useAuth();
-  const { semesters, setSemesters } = useData();
+  const { user, isLoading: isAuthLoading, login, logout, signup, enrollCourse, unenrollCourse } = useAuth();
+  const { semesters, setSemesters, isLoading: isDataLoading, error } = useData();
+
+  // The curriculum and the session both come from the API, so hold the first
+  // paint until they resolve rather than flashing an empty page.
+  if (isAuthLoading || isDataLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" data-testid="status-loading">
+        <Loader2 className="h-8 w-8 animate-spin text-brand-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="text-center max-w-md" data-testid="status-error">
+          <h1 className="text-2xl font-bold text-foreground mb-2">
+            데이터를 불러오지 못했습니다
+          </h1>
+          <p className="text-muted-foreground">
+            서버에 연결할 수 없습니다. 데이터베이스 설정을 확인한 뒤 페이지를 새로고침해주세요.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // Get all courses from all semesters
   const allCourses = semesters.flatMap(s => s.courses);

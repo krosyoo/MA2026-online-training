@@ -10,8 +10,8 @@ interface CourseDetailPageProps {
   course: Course | undefined;
   user: User | null;
   isEnrolled: boolean;
-  onEnroll: (courseId: number) => void;
-  onUnenroll: (courseId: number) => void;
+  onEnroll: (courseId: number) => Promise<void>;
+  onUnenroll: (courseId: number) => Promise<void>;
 }
 
 export function CourseDetailPage({
@@ -43,7 +43,7 @@ export function CourseDetailPage({
     );
   }
 
-  const handleEnroll = () => {
+  const handleEnroll = async () => {
     if (!user) {
       toast({
         title: '로그인이 필요합니다',
@@ -52,19 +52,36 @@ export function CourseDetailPage({
       });
       return;
     }
-    onEnroll(course.id);
-    toast({
-      title: '수강 신청 완료',
-      description: `${course.title} 강의를 수강 신청했습니다.`,
-    });
+
+    try {
+      await onEnroll(course.id);
+      toast({
+        title: '수강 신청 완료',
+        description: `${course.title} 강의를 수강 신청했습니다.`,
+      });
+    } catch {
+      toast({
+        title: '수강 신청 실패',
+        description: '잠시 후 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleUnenroll = () => {
-    onUnenroll(course.id);
-    toast({
-      title: '수강 취소 완료',
-      description: `${course.title} 강의를 수강 취소했습니다.`,
-    });
+  const handleUnenroll = async () => {
+    try {
+      await onUnenroll(course.id);
+      toast({
+        title: '수강 취소 완료',
+        description: `${course.title} 강의를 수강 취소했습니다.`,
+      });
+    } catch {
+      toast({
+        title: '수강 취소 실패',
+        description: '잠시 후 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (

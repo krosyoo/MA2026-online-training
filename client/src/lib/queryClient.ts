@@ -1,10 +1,31 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-async function throwIfResNotOk(res: Response) {
-  if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+/** Carries the status and the API's own message so callers can show it. */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
   }
+}
+
+async function throwIfResNotOk(res: Response) {
+  if (res.ok) return;
+
+  const text = (await res.text()) || res.statusText;
+  // The API answers with { message }, but an infrastructure error (a proxy, a
+  // crashed function) can return HTML or plain text instead.
+  let message = text;
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.message === "string") message = parsed.message;
+  } catch {
+    message = `${res.status}: ${text}`;
+  }
+
+  throw new ApiError(res.status, message);
 }
 
 export async function apiRequest(

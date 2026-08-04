@@ -1,102 +1,119 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, ReactNode } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { User } from '@shared/types';
+import { apiRequest, getQueryFn } from '@/lib/queryClient';
+
+/**
+ * `message` carries the server's own reason on failure — a misconfigured
+ * deployment must not be reported to the user as a wrong password.
+ */
+export interface AuthResult {
+  ok: boolean;
+  message?: string;
+}
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => boolean;
-  logout: () => void;
-  signup: (email: string, password: string, name: string) => boolean;
-  enrollCourse: (courseId: number) => void;
-  unenrollCourse: (courseId: number) => void;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  logout: () => Promise<void>;
+  signup: (
+    email: string,
+    password: string,
+    name: string,
+  ) => Promise<AuthResult>;
+  enrollCourse: (courseId: number) => Promise<void>;
+  unenrollCourse: (courseId: number) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock users for demo
-const MOCK_USERS: User[] = [
-  {
-    id: '1',
-    email: 'student@test.com',
-    password: 'password',
-    name: '김학생',
-    role: 'student',
-    enrolledCourses: []
-  },
-  {
-    id: '2',
-    email: 'admin@test.com',
-    password: 'password',
-    name: '이관리자',
-    role: 'admin',
-    enrolledCourses: []
-  }
-];
+export const AUTH_QUERY_KEY = ['/api/auth/me'];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  const [user, setUser] = useState<User | null>(null);
+  const queryClient = useQueryClient();
 
-  const login = (email: string, password: string): boolean => {
-    const foundUser = users.find(
-      u => u.email === email && u.password === password
-    );
-    if (foundUser) {
-      setUser(foundUser);
-      return true;
-    }
-    return false;
+  // Being signed out is a normal state, not an error, so 401 resolves to null
+  // instead of throwing.
+  const { data: user, isLoading } = useQuery<User | null>({
+    queryKey: AUTH_QUERY_KEY,
+    queryFn: getQueryFn<User | null>({ on401: 'returnNull' }),
+  });
+
+  // Every auth and enrollment endpoint returns the refreshed user, so the cache
+  // is updated from the response instead of triggering another round trip.
+  const setUser = (next: User | null) => {
+    queryClient.setQueryData(AUTH_QUERY_KEY, next);
   };
 
-  const logout = () => {
+  const login = async (
+    email: string,
+    password: string,
+  ): Promise<AuthResult> => {
+    try {
+      const res = await apiRequest('POST', '/api/auth/login', { email, password });
+      setUser(await res.json());
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: (error as Error).message };
+    }
+  };
+
+  const signup = async (
+    email: string,
+    password: string,
+    name: string,
+  ): Promise<AuthResult> => {
+    try {
+      const res = await apiRequest('POST', '/api/auth/signup', {
+        email,
+        password,
+        name,
+      });
+      setUser(await res.json());
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: (error as Error).message };
+    }
+  };
+
+  const logout = async (): Promise<void> => {
+    await apiRequest('POST', '/api/auth/logout');
     setUser(null);
   };
 
-  const signup = (email: string, password: string, name: string): boolean => {
-    const existingUser = users.find(u => u.email === email);
-    if (existingUser) {
-      return false;
-    }
+  const enrollMutation = useMutation({
+    mutationFn: async (courseId: number) => {
+      const res = await apiRequest('POST', '/api/enrollments', { courseId });
+      return (await res.json()) as User;
+    },
+    onSuccess: setUser,
+  });
 
-    const newUser: User = {
-      id: Date.now().toString(),
-      email,
-      password,
-      name,
-      role: 'student',
-      enrolledCourses: []
-    };
-
-    setUsers([...users, newUser]);
-    setUser(newUser);
-    return true;
-  };
-
-  const enrollCourse = (courseId: number) => {
-    if (!user) return;
-
-    const updatedUser = {
-      ...user,
-      enrolledCourses: [...user.enrolledCourses, courseId]
-    };
-
-    setUser(updatedUser);
-    setUsers(users.map(u => u.id === user.id ? updatedUser : u));
-  };
-
-  const unenrollCourse = (courseId: number) => {
-    if (!user) return;
-
-    const updatedUser = {
-      ...user,
-      enrolledCourses: user.enrolledCourses.filter(id => id !== courseId)
-    };
-
-    setUser(updatedUser);
-    setUsers(users.map(u => u.id === user.id ? updatedUser : u));
-  };
+  const unenrollMutation = useMutation({
+    mutationFn: async (courseId: number) => {
+      const res = await apiRequest('DELETE', `/api/enrollments/${courseId}`);
+      return (await res.json()) as User;
+    },
+    onSuccess: setUser,
+  });
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, signup, enrollCourse, unenrollCourse }}>
+    <AuthContext.Provider
+      value={{
+        user: user ?? null,
+        isLoading,
+        login,
+        logout,
+        signup,
+        enrollCourse: async (courseId) => {
+          await enrollMutation.mutateAsync(courseId);
+        },
+        unenrollCourse: async (courseId) => {
+          await unenrollMutation.mutateAsync(courseId);
+        },
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
