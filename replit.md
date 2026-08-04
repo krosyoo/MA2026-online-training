@@ -60,12 +60,18 @@ Preferred communication style: Simple, everyday language.
 
 **Authentication Strategy**: Password login with scrypt-hashed passwords (`node:crypto`), JWT session cookie, and role-based access control (student/admin).
 
+**Brute-force protection**: A known account locks for 15 minutes after 5 consecutive failed logins (`users.failedAttempts`/`lockedUntil`, `server/storage.ts`). `/api/auth/login` and `/api/auth/signup` are also throttled per IP (`server/rateLimit.ts`, backed by the `rate_limits` table) to blunt credential stuffing and signup spam.
+
+**Password recovery**: No email provider is configured, so forgotten passwords are admin-mediated — the admin dashboard's user list can generate a one-time temporary password (`POST /api/admin/users/:id/reset-password`), returned once and never stored in plaintext.
+
 **Authorization Levels**:
 - Public: Landing page, course browsing, `GET /api/semesters`
-- Student: Course enrollment, progress tracking
-- Admin: Content management via `PUT /api/semesters`
+- Student: Course enrollment, marking a course complete (`PATCH /api/enrollments/:courseId`)
+- Admin: Content management via `PUT /api/semesters`, plus creating/deleting semesters and courses (`/api/admin/semesters*`, `/api/admin/courses/:id` — deleting one with existing enrollments requires `?force=true`) and user management (`/api/admin/users*`)
 
 Admin role is re-read from the database on every privileged request, so revoking an account's role takes effect immediately even if its cookie is still valid.
+
+**Known limitation**: concurrent admin edits are last-write-wins — `PUT /api/semesters` does not check whether the data changed since it was loaded. Acceptable for a small admin team; would need an optimistic-concurrency check (e.g. a version column) before opening the dashboard to many simultaneous editors.
 
 ### Key Design Patterns
 

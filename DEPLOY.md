@@ -111,12 +111,19 @@ npm run dev                  # http://localhost:5000
 |---|---|---|---|
 | GET | `/api/health` | 공개 | 상태 확인 |
 | GET | `/api/semesters` | 공개 | 전체 커리큘럼 |
-| PUT | `/api/semesters` | 관리자 | 학기·강의 정보 수정 |
-| POST | `/api/auth/signup` | 공개 | 회원가입 |
-| POST | `/api/auth/login` | 공개 | 로그인 |
+| PUT | `/api/semesters` | 관리자 | 학기·강의·도서 정보 수정 (기존 항목만, 생성/삭제는 아래 참조) |
+| POST | `/api/admin/semesters` | 관리자 | 학기 추가 |
+| DELETE | `/api/admin/semesters/:id` | 관리자 | 학기 삭제 (수강신청이 있으면 409, `?force=true`로 재확인) |
+| POST | `/api/admin/semesters/:id/courses` | 관리자 | 해당 학기에 강의 추가 |
+| DELETE | `/api/admin/courses/:id` | 관리자 | 강의 삭제 (수강신청이 있으면 409, `?force=true`로 재확인) |
+| GET | `/api/admin/users` | 관리자 | 사용자 목록 (역할·수강 건수 포함) |
+| POST | `/api/admin/users/:id/reset-password` | 관리자 | 임시 비밀번호 발급 (응답에 1회만 포함) |
+| POST | `/api/auth/signup` | 공개 (IP 제한) | 회원가입 |
+| POST | `/api/auth/login` | 공개 (IP 제한) | 로그인 |
 | POST | `/api/auth/logout` | 공개 | 로그아웃 |
 | GET | `/api/auth/me` | 로그인 | 현재 사용자 + 수강 목록 |
 | POST | `/api/enrollments` | 로그인 | 수강 신청 |
+| PATCH | `/api/enrollments/:courseId` | 로그인 | 완료 여부 변경 (`{"completed": true\|false}`) |
 | DELETE | `/api/enrollments/:courseId` | 로그인 | 수강 취소 |
 | POST | `/api/seed` | `SEED_SECRET` | 최초 데이터 주입 |
 
@@ -125,3 +132,17 @@ npm run dev                  # http://localhost:5000
 
 관리자 권한은 요청마다 DB에서 다시 확인하므로, 계정 권한을 내리면 기존 로그인 쿠키로도
 관리자 기능을 쓸 수 없습니다.
+
+### 로그인 보호
+
+- **계정 잠금**: 같은 계정에 5회 연속 비밀번호 오류 시 15분간 잠깁니다 (`users.failed_attempts`/`locked_until`).
+- **IP 제한**: `/api/auth/login`은 IP당 10분에 20회, `/api/auth/signup`은 IP당 1시간에 8회로
+  제한됩니다 (`rate_limits` 테이블).
+- 관리자가 비밀번호를 재설정하면 잠금도 함께 풀립니다.
+
+### 비밀번호를 잊은 사용자
+
+이메일 발송 기능이 없으므로(외부 서비스 없이 Vercel만 사용하는 구성), 학생이 비밀번호를
+잊으면 **관리자가 직접 재설정**합니다. `/admin` 페이지의 "사용자 관리"에서 "비밀번호 재설정"을
+누르면 임시 비밀번호가 화면에 한 번만 표시됩니다 — 이 값은 저장되지 않으므로 그 자리에서
+학생에게 안전한 방법(문자, 카카오톡 등)으로 전달해야 합니다.

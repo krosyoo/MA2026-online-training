@@ -2,29 +2,48 @@ import { Router, type Express, type Request, type Response } from "express";
 import { ZodError } from "zod";
 import { databaseUrl, sessionSecret } from "./env";
 import {
+  adminResetPasswordSchema,
+  courseCreateSchema,
   curriculumUpdateSchema,
   enrollSchema,
+  enrollmentUpdateSchema,
   loginSchema,
+  semesterCreateSchema,
   signupSchema,
 } from "../shared/schema";
 import {
   attachSession,
   clearSessionCookie,
   createSessionToken,
+  generateTemporaryPassword,
   hashPassword,
   requireAdmin,
   requireAuth,
   setSessionCookie,
   verifyPassword,
 } from "./auth";
+import { rateLimitByIp } from "./rateLimit";
 import {
   EmailTakenError,
+  countEnrollmentsForCourse,
+  countEnrollmentsForSemester,
   courseExists,
+  createCourse,
+  createSemester,
   createUser,
+  deleteCourse,
+  deleteSemester,
   enroll,
   getCurriculum,
   getSessionUser,
   getUserByEmail,
+  getUserById,
+  listUsers,
+  recordLoginFailure,
+  resetLoginFailures,
+  semesterExists,
+  setEnrollmentCompleted,
+  setUserPassword,
   unenroll,
   updateCurriculum,
 } from "./storage";
@@ -41,6 +60,12 @@ function asyncHandler(
   return (req, res, next) => {
     handler(req, res).catch(next);
   };
+}
+
+/** Parses a positive integer route param, or null if it is not one. */
+function intParam(value: string): number | null {
+  const n = Number(value);
+  return Number.isInteger(n) ? n : null;
 }
 
 export function registerRoutes(app: Express): void {
@@ -64,6 +89,7 @@ export function registerRoutes(app: Express): void {
 
   api.post(
     "/auth/signup",
+    rateLimitByIp("signup", 60 * 60 * 1000, 8),
     asyncHandler(async (req, res) => {
       let input;
       try {
@@ -97,6 +123,7 @@ export function registerRoutes(app: Express): void {
 
   api.post(
     "/auth/login",
+    rateLimitByIp("login", 10 * 60 * 1000, 20),
     asyncHandler(async (req, res) => {
       let input;
       try {
@@ -107,17 +134,32 @@ export function registerRoutes(app: Express): void {
       }
 
       const account = await getUserByEmail(input.email);
+
+      if (account?.lockedUntil && account.lockedUntil.getTime() > Date.now()) {
+        const minutes = Math.ceil(
+          (account.lockedUntil.getTime() - Date.now()) / 60_000,
+        );
+        res.status(429).json({
+          message: `로그인 시도가 너무 많아 계정이 잠겼습니다. ${minutes}분 후 다시 시도해주세요.`,
+        });
+        return;
+      }
+
       const ok =
         account !== undefined &&
         (await verifyPassword(input.password, account.password));
 
       if (!account || !ok) {
+        // Only bump the counter for accounts that actually exist — otherwise
+        // this becomes a way to discover which emails are registered.
+        if (account) await recordLoginFailure(account.id);
         res
           .status(401)
           .json({ message: "이메일 또는 비밀번호가 올바르지 않습니다." });
         return;
       }
 
+      await resetLoginFailures(account.id);
       setSessionCookie(
         res,
         await createSessionToken({ id: account.id, role: account.role }),
@@ -176,6 +218,147 @@ export function registerRoutes(app: Express): void {
     }),
   );
 
+  api.post(
+    "/admin/semesters",
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      let input;
+      try {
+        input = semesterCreateSchema.parse(req.body);
+      } catch (error) {
+        res.status(400).json({ message: validationMessage(error as ZodError) });
+        return;
+      }
+
+      await createSemester(input);
+      res.status(201).json(await getCurriculum());
+    }),
+  );
+
+  api.delete(
+    "/admin/semesters/:id",
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const semesterId = intParam(req.params.id);
+      if (semesterId === null) {
+        res.status(400).json({ message: "학기 번호가 올바르지 않습니다." });
+        return;
+      }
+      if (!(await semesterExists(semesterId))) {
+        res.status(404).json({ message: "학기를 찾을 수 없습니다." });
+        return;
+      }
+
+      const enrolledCount = await countEnrollmentsForSemester(semesterId);
+      if (enrolledCount > 0 && req.query.force !== "true") {
+        res.status(409).json({
+          message: `이 학기의 강의에 ${enrolledCount}건의 수강신청이 있습니다. 강제로 삭제하려면 다시 확인해주세요.`,
+          enrolledCount,
+        });
+        return;
+      }
+
+      await deleteSemester(semesterId);
+      res.json(await getCurriculum());
+    }),
+  );
+
+  api.post(
+    "/admin/semesters/:id/courses",
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const semesterId = intParam(req.params.id);
+      if (semesterId === null) {
+        res.status(400).json({ message: "학기 번호가 올바르지 않습니다." });
+        return;
+      }
+      if (!(await semesterExists(semesterId))) {
+        res.status(404).json({ message: "학기를 찾을 수 없습니다." });
+        return;
+      }
+
+      let input;
+      try {
+        input = courseCreateSchema.parse(req.body);
+      } catch (error) {
+        res.status(400).json({ message: validationMessage(error as ZodError) });
+        return;
+      }
+
+      await createCourse(semesterId, input);
+      res.status(201).json(await getCurriculum());
+    }),
+  );
+
+  api.delete(
+    "/admin/courses/:id",
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const courseId = intParam(req.params.id);
+      if (courseId === null) {
+        res.status(400).json({ message: "강의 번호가 올바르지 않습니다." });
+        return;
+      }
+      if (!(await courseExists(courseId))) {
+        res.status(404).json({ message: "강의를 찾을 수 없습니다." });
+        return;
+      }
+
+      const enrolledCount = await countEnrollmentsForCourse(courseId);
+      if (enrolledCount > 0 && req.query.force !== "true") {
+        res.status(409).json({
+          message: `이 강의에 ${enrolledCount}건의 수강신청이 있습니다. 강제로 삭제하려면 다시 확인해주세요.`,
+          enrolledCount,
+        });
+        return;
+      }
+
+      await deleteCourse(courseId);
+      res.json(await getCurriculum());
+    }),
+  );
+
+  // Admin: user management -----------------------------------------------------
+
+  api.get(
+    "/admin/users",
+    requireAdmin,
+    asyncHandler(async (_req, res) => {
+      res.json(await listUsers());
+    }),
+  );
+
+  /**
+   * No email provider is configured, so this is the recovery path when a
+   * student forgets their password: an admin generates a one-time value here
+   * and relays it out-of-band. The plaintext is returned exactly once and
+   * never stored or logged.
+   */
+  api.post(
+    "/admin/users/:id/reset-password",
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      let input;
+      try {
+        input = adminResetPasswordSchema.parse(req.body ?? {});
+      } catch (error) {
+        res.status(400).json({ message: validationMessage(error as ZodError) });
+        return;
+      }
+
+      const target = await getUserById(req.params.id);
+      if (!target) {
+        res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+        return;
+      }
+
+      const temporaryPassword = input.password ?? generateTemporaryPassword();
+      await setUserPassword(target.id, await hashPassword(temporaryPassword));
+
+      res.json({ email: target.email, temporaryPassword });
+    }),
+  );
+
   // Enrollments ---------------------------------------------------------------
 
   api.post(
@@ -200,12 +383,44 @@ export function registerRoutes(app: Express): void {
     }),
   );
 
+  api.patch(
+    "/enrollments/:courseId",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const courseId = intParam(req.params.courseId);
+      if (courseId === null) {
+        res.status(400).json({ message: "강의 번호가 올바르지 않습니다." });
+        return;
+      }
+
+      let input;
+      try {
+        input = enrollmentUpdateSchema.parse(req.body);
+      } catch (error) {
+        res.status(400).json({ message: validationMessage(error as ZodError) });
+        return;
+      }
+
+      const updated = await setEnrollmentCompleted(
+        req.auth!.id,
+        courseId,
+        input.completed,
+      );
+      if (!updated) {
+        res.status(404).json({ message: "수강 신청 내역을 찾을 수 없습니다." });
+        return;
+      }
+
+      res.json(await getSessionUser(req.auth!.id));
+    }),
+  );
+
   api.delete(
     "/enrollments/:courseId",
     requireAuth,
     asyncHandler(async (req, res) => {
-      const courseId = Number(req.params.courseId);
-      if (!Number.isInteger(courseId)) {
+      const courseId = intParam(req.params.courseId);
+      if (courseId === null) {
         res.status(400).json({ message: "강의 번호가 올바르지 않습니다." });
         return;
       }

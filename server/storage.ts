@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import {
   books,
@@ -6,10 +6,12 @@ import {
   enrollments,
   semesters,
   users,
+  type CourseCreateInput,
   type CurriculumUpdate,
+  type SemesterCreateInput,
   type UserRow,
 } from "../shared/schema";
-import type { Book, Semester, User } from "../shared/types";
+import type { AdminUserSummary, Book, Semester, User } from "../shared/types";
 
 /** Raised when a signup collides with an existing account. */
 export class EmailTakenError extends Error {
@@ -18,6 +20,8 @@ export class EmailTakenError extends Error {
     this.name = "EmailTakenError";
   }
 }
+
+const MAX_FAILED_ATTEMPTS = 5;
 
 // Curriculum ------------------------------------------------------------------
 
@@ -74,36 +78,37 @@ export async function getCurriculum(): Promise<Semester[]> {
 }
 
 /**
- * Applies the admin dashboard's edits. Rows are updated in place — never
- * deleted and re-inserted — so that existing enrollments keep pointing at the
- * courses they were made against.
+ * Applies the admin dashboard's edits. Semester and course rows are updated
+ * in place — never deleted and re-inserted — so that existing enrollments
+ * keep pointing at the courses they were made against. Each semester's books
+ * are fully replaced instead, which is safe because nothing references a
+ * book row.
  *
- * Each table is updated with a single statement, which keeps the operation
- * atomic per table without needing interactive transactions (unavailable on
- * Neon's HTTP driver).
+ * Every step is a single statement, which keeps it atomic per table without
+ * needing interactive transactions (unavailable on Neon's HTTP driver).
  */
 export async function updateCurriculum(
   payload: CurriculumUpdate,
 ): Promise<void> {
-  if (payload.length > 0) {
-    const rows = sql.join(
-      payload.map(
-        (s) =>
-          sql`(${s.id}::integer, ${s.title}::text, ${s.subtitle}::text, ${s.description}::text)`,
-      ),
-      sql`, `,
-    );
-    await getDb().execute(sql`
-      UPDATE ${semesters} AS s
-      SET title = v.title, subtitle = v.subtitle, description = v.description
-      FROM (VALUES ${rows}) AS v(id, title, subtitle, description)
-      WHERE s.id = v.id
-    `);
-  }
+  if (payload.length === 0) return;
+
+  const semesterRows = sql.join(
+    payload.map(
+      (s) =>
+        sql`(${s.id}::integer, ${s.title}::text, ${s.subtitle}::text, ${s.description}::text)`,
+    ),
+    sql`, `,
+  );
+  await getDb().execute(sql`
+    UPDATE ${semesters} AS s
+    SET title = v.title, subtitle = v.subtitle, description = v.description
+    FROM (VALUES ${semesterRows}) AS v(id, title, subtitle, description)
+    WHERE s.id = v.id
+  `);
 
   const courseUpdates = payload.flatMap((s) => s.courses);
   if (courseUpdates.length > 0) {
-    const rows = sql.join(
+    const courseRows = sql.join(
       courseUpdates.map(
         (c) =>
           sql`(${c.id}::integer, ${c.title}::text, ${c.weeks}::integer, ${c.description}::text, ${c.instructor}::text, ${c.videoUrl}::text)`,
@@ -117,10 +122,80 @@ export async function updateCurriculum(
           description = v.description,
           instructor = v.instructor,
           video_url = v.video_url
-      FROM (VALUES ${rows}) AS v(id, title, weeks, description, instructor, video_url)
+      FROM (VALUES ${courseRows}) AS v(id, title, weeks, description, instructor, video_url)
       WHERE c.id = v.id
     `);
   }
+
+  const semesterIds = payload.map((s) => s.id);
+  await getDb().delete(books).where(inArray(books.semesterId, semesterIds));
+
+  const newBookRows = payload.flatMap((s) =>
+    (["lecture", "required", "recommended"] as const).flatMap((category) =>
+      s.books[category].map((b, index) => ({
+        semesterId: s.id,
+        category,
+        title: b.title,
+        author: b.author || null,
+        publisher: b.publisher,
+        link: b.link,
+        coverImage: b.coverImage || null,
+        sortOrder: index,
+      })),
+    ),
+  );
+  if (newBookRows.length > 0) {
+    await getDb().insert(books).values(newBookRows);
+  }
+}
+
+/**
+ * Both id assignment and sort_order placement are computed in scalar
+ * subqueries within the same INSERT, so a single statement stays correct
+ * even if two admins create rows at the same time.
+ */
+export async function createSemester(
+  input: SemesterCreateInput,
+): Promise<void> {
+  await getDb().execute(sql`
+    INSERT INTO semesters (id, title, subtitle, description, sort_order)
+    VALUES (
+      (SELECT COALESCE(MAX(id), 0) + 1 FROM semesters),
+      ${input.title}, ${input.subtitle}, ${input.description},
+      (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM semesters)
+    )
+  `);
+}
+
+export async function createCourse(
+  semesterId: number,
+  input: CourseCreateInput,
+): Promise<void> {
+  await getDb().execute(sql`
+    INSERT INTO courses (id, semester_id, title, weeks, description, instructor, video_url, sort_order)
+    VALUES (
+      (SELECT COALESCE(MAX(id), 0) + 1 FROM courses),
+      ${semesterId}, ${input.title}, ${input.weeks}, ${input.description}, ${input.instructor}, ${input.videoUrl},
+      (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM courses WHERE semester_id = ${semesterId})
+    )
+  `);
+}
+
+export async function deleteSemester(semesterId: number): Promise<void> {
+  await getDb().delete(semesters).where(eq(semesters.id, semesterId));
+}
+
+export async function deleteCourse(courseId: number): Promise<void> {
+  await getDb().delete(courses).where(eq(courses.id, courseId));
+}
+
+export async function semesterExists(semesterId: number): Promise<boolean> {
+  const [row] = await getDb()
+    .select({ id: semesters.id })
+    .from(semesters)
+    .where(eq(semesters.id, semesterId))
+    .limit(1);
+  return Boolean(row);
 }
 
 export async function courseExists(courseId: number): Promise<boolean> {
@@ -130,6 +205,27 @@ export async function courseExists(courseId: number): Promise<boolean> {
     .where(eq(courses.id, courseId))
     .limit(1);
   return Boolean(row);
+}
+
+export async function countEnrollmentsForCourse(
+  courseId: number,
+): Promise<number> {
+  const [row] = await getDb()
+    .select({ count: sql<number>`count(*)::int` })
+    .from(enrollments)
+    .where(eq(enrollments.courseId, courseId));
+  return row?.count ?? 0;
+}
+
+export async function countEnrollmentsForSemester(
+  semesterId: number,
+): Promise<number> {
+  const [row] = await getDb()
+    .select({ count: sql<number>`count(*)::int` })
+    .from(enrollments)
+    .innerJoin(courses, eq(enrollments.courseId, courses.id))
+    .where(eq(courses.semesterId, semesterId));
+  return row?.count ?? 0;
 }
 
 // Users -----------------------------------------------------------------------
@@ -142,6 +238,11 @@ export async function getUserByEmail(
     .from(users)
     .where(eq(users.email, email.toLowerCase()))
     .limit(1);
+  return row;
+}
+
+export async function getUserById(id: string): Promise<UserRow | undefined> {
+  const [row] = await getDb().select().from(users).where(eq(users.id, id)).limit(1);
   return row;
 }
 
@@ -182,9 +283,74 @@ export async function createUser(input: {
   }
 }
 
+export async function listUsers(): Promise<AdminUserSummary[]> {
+  const rows = await getDb()
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      role: users.role,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .orderBy(asc(users.createdAt));
+
+  const counts = await getDb()
+    .select({ userId: enrollments.userId, count: sql<number>`count(*)::int` })
+    .from(enrollments)
+    .groupBy(enrollments.userId);
+  const countByUser = new Map(counts.map((c) => [c.userId, c.count]));
+
+  return rows.map((r) => ({
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    role: r.role,
+    createdAt: r.createdAt.toISOString(),
+    enrolledCount: countByUser.get(r.id) ?? 0,
+  }));
+}
+
+export async function setUserPassword(
+  userId: string,
+  passwordHash: string,
+): Promise<void> {
+  // A reset also clears any lockout — there is no reason to make an admin
+  // wait out a lock they just fixed the cause of.
+  await getDb()
+    .update(users)
+    .set({ password: passwordHash, failedAttempts: 0, lockedUntil: null })
+    .where(eq(users.id, userId));
+}
+
 /**
- * Builds the client-facing user object, including the enrolled course ids the
- * UI reads directly off the session user.
+ * Bumps the failure counter and locks the account for 15 minutes once it
+ * reaches the threshold, in one statement so concurrent failed attempts on
+ * the same account still count correctly.
+ */
+export async function recordLoginFailure(userId: string): Promise<void> {
+  await getDb().execute(sql`
+    UPDATE users
+    SET failed_attempts = failed_attempts + 1,
+        locked_until = CASE
+          WHEN failed_attempts + 1 >= ${MAX_FAILED_ATTEMPTS}
+          THEN now() + interval '15 minutes'
+          ELSE locked_until
+        END
+    WHERE id = ${userId}
+  `);
+}
+
+export async function resetLoginFailures(userId: string): Promise<void> {
+  await getDb()
+    .update(users)
+    .set({ failedAttempts: 0, lockedUntil: null })
+    .where(eq(users.id, userId));
+}
+
+/**
+ * Builds the client-facing user object, including the enrolled and completed
+ * course ids the UI reads directly off the session user.
  */
 export async function getSessionUser(id: string): Promise<User | undefined> {
   const [row] = await getDb()
@@ -201,12 +367,16 @@ export async function getSessionUser(id: string): Promise<User | undefined> {
   if (!row) return undefined;
 
   const enrolled = await getDb()
-    .select({ courseId: enrollments.courseId })
+    .select({ courseId: enrollments.courseId, completed: enrollments.completed })
     .from(enrollments)
     .where(eq(enrollments.userId, id))
     .orderBy(asc(enrollments.courseId));
 
-  return { ...row, enrolledCourses: enrolled.map((e) => e.courseId) };
+  return {
+    ...row,
+    enrolledCourses: enrolled.map((e) => e.courseId),
+    completedCourses: enrolled.filter((e) => e.completed).map((e) => e.courseId),
+  };
 }
 
 // Enrollments -----------------------------------------------------------------
@@ -230,4 +400,20 @@ export async function unenroll(
     .where(
       and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId)),
     );
+}
+
+/** Returns false when the user has no enrollment in that course to update. */
+export async function setEnrollmentCompleted(
+  userId: string,
+  courseId: number,
+  completed: boolean,
+): Promise<boolean> {
+  const [row] = await getDb()
+    .update(enrollments)
+    .set({ completed, completedAt: completed ? new Date() : null })
+    .where(
+      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId)),
+    )
+    .returning({ id: enrollments.id });
+  return Boolean(row);
 }

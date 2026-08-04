@@ -52,6 +52,18 @@ export async function hashPassword(plain: string): Promise<string> {
   return `${salt}:${derived.toString("hex")}`;
 }
 
+/**
+ * For admin-initiated password resets: there is no email provider configured
+ * (Vercel-only deployment), so recovery is admin-mediated instead of a
+ * self-service emailed link. The admin relays this value to the student
+ * out-of-band; the API returns it exactly once and never stores it in
+ * plaintext.
+ */
+export function generateTemporaryPassword(): string {
+  // Base64url avoids characters that are awkward to read aloud or paste.
+  return randomBytes(9).toString("base64url");
+}
+
 export async function verifyPassword(
   plain: string,
   stored: string,

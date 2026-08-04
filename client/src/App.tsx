@@ -17,8 +17,26 @@ import { AuthPage } from "@/pages/AuthPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
-  const { user, isLoading: isAuthLoading, login, logout, signup, enrollCourse, unenrollCourse } = useAuth();
-  const { semesters, setSemesters, isLoading: isDataLoading, error } = useData();
+  const {
+    user,
+    isLoading: isAuthLoading,
+    login,
+    logout,
+    signup,
+    enrollCourse,
+    unenrollCourse,
+    setCourseCompleted,
+  } = useAuth();
+  const {
+    semesters,
+    setSemesters,
+    createSemester,
+    deleteSemester,
+    createCourse,
+    deleteCourse,
+    isLoading: isDataLoading,
+    error,
+  } = useData();
 
   // The curriculum and the session both come from the API, so hold the first
   // paint until they resolve rather than flashing an empty page.
@@ -85,11 +103,23 @@ function Router() {
           </Route>
           
           <Route path="/my-status">
-            <MyStatusPage user={user} enrolledCourses={enrolledCourses} />
+            <MyStatusPage
+              user={user}
+              enrolledCourses={enrolledCourses}
+              onSetCompleted={setCourseCompleted}
+            />
           </Route>
-          
+
           <Route path="/admin">
-            <AdminPage user={user} semesters={semesters} onSave={setSemesters} />
+            <AdminPage
+              user={user}
+              semesters={semesters}
+              onSave={setSemesters}
+              onCreateSemester={createSemester}
+              onDeleteSemester={deleteSemester}
+              onCreateCourse={createCourse}
+              onDeleteCourse={deleteCourse}
+            />
           </Route>
           
           <Route path="/auth">

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   integer,
   pgTable,
   serial,
@@ -18,6 +19,8 @@ export const users = pgTable("users", {
   role: text("role", { enum: ["student", "admin"] })
     .notNull()
     .default("student"),
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  lockedUntil: timestamp("locked_until"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -68,6 +71,8 @@ export const enrollments = pgTable(
     courseId: integer("course_id")
       .notNull()
       .references(() => courses.id, { onDelete: "cascade" }),
+    completed: boolean("completed").notNull().default(false),
+    completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => ({
@@ -77,6 +82,18 @@ export const enrollments = pgTable(
     ),
   }),
 );
+
+/**
+ * Backs the login/signup throttle. `key` is a caller-chosen bucket such as
+ * `login-ip:1.2.3.4` or `login-email:user@example.com`; count and windowStart
+ * implement a fixed window that resets once it expires (see
+ * `server/rateLimit.ts`).
+ */
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(0),
+  windowStart: timestamp("window_start").notNull().defaultNow(),
+});
 
 export type UserRow = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
@@ -101,6 +118,24 @@ export const enrollSchema = z.object({
   courseId: z.number().int(),
 });
 
+export const enrollmentUpdateSchema = z.object({
+  completed: z.boolean(),
+});
+
+const bookInputSchema = z.object({
+  title: z.string().trim().min(1, "도서 제목을 입력해주세요."),
+  author: z.string().trim().optional(),
+  publisher: z.string().trim().min(1, "출판사를 입력해주세요."),
+  link: z.string().trim().min(1, "링크를 입력해주세요."),
+  coverImage: z.string().trim().optional(),
+});
+
+const booksInputSchema = z.object({
+  lecture: z.array(bookInputSchema),
+  required: z.array(bookInputSchema),
+  recommended: z.array(bookInputSchema),
+});
+
 const courseUpdateSchema = z.object({
   id: z.number().int(),
   title: z.string().trim().min(1),
@@ -116,14 +151,40 @@ const semesterUpdateSchema = z.object({
   subtitle: z.string(),
   description: z.string(),
   courses: z.array(courseUpdateSchema),
+  books: booksInputSchema,
 });
 
 /**
- * The admin dashboard edits existing semesters and courses in place. It never
- * creates or removes rows, so the payload is a list of updates keyed by id.
+ * The admin dashboard edits existing semesters, courses and books in place.
+ * Semesters and courses are matched by id (never created or removed here —
+ * see semesterCreateSchema/courseCreateSchema for that). Each semester's
+ * books are fully replaced, which is safe because nothing else references a
+ * book row.
  */
 export const curriculumUpdateSchema = z.array(semesterUpdateSchema);
+
+export const semesterCreateSchema = z.object({
+  title: z.string().trim().min(1, "학기 제목을 입력해주세요."),
+  subtitle: z.string().trim().default(""),
+  description: z.string().trim().default(""),
+});
+
+export const courseCreateSchema = z.object({
+  title: z.string().trim().min(1, "강의 제목을 입력해주세요."),
+  weeks: z.number().int().min(1, "기간은 1주 이상이어야 합니다."),
+  description: z.string().trim().default(""),
+  instructor: z.string().trim().default(""),
+  videoUrl: z.string().trim().default(""),
+});
+
+/** Admin-initiated reset. Omit `password` to have the server generate one. */
+export const adminResetPasswordSchema = z.object({
+  password: z.string().min(6).optional(),
+});
 
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CurriculumUpdate = z.infer<typeof curriculumUpdateSchema>;
+export type BookInput = z.infer<typeof bookInputSchema>;
+export type SemesterCreateInput = z.infer<typeof semesterCreateSchema>;
+export type CourseCreateInput = z.infer<typeof courseCreateSchema>;

@@ -1,16 +1,22 @@
+import { useState } from 'react';
 import { Course, User } from '@shared/types';
 import { Link } from 'wouter';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { User as UserIcon, ArrowRight, BookOpen } from 'lucide-react';
+import { User as UserIcon, ArrowRight, BookOpen, CheckCircle2, Circle } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 interface MyStatusPageProps {
   user: User | null;
   enrolledCourses: Course[];
+  onSetCompleted: (courseId: number, completed: boolean) => Promise<void>;
 }
 
-export function MyStatusPage({ user, enrolledCourses }: MyStatusPageProps) {
+export function MyStatusPage({ user, enrolledCourses, onSetCompleted }: MyStatusPageProps) {
+  const { toast } = useToast();
+  const [pendingId, setPendingId] = useState<number | null>(null);
+
   if (!user) {
     return (
       <div className="min-h-screen bg-background py-12">
@@ -34,10 +40,31 @@ export function MyStatusPage({ user, enrolledCourses }: MyStatusPageProps) {
     );
   }
 
-  // Generate mock progress for each course (between 10% and 90%)
-  const getProgress = (courseId: number) => {
-    const hash = courseId * 17;
-    return 10 + (hash % 81);
+  const completedCount = enrolledCourses.filter((c) =>
+    user.completedCourses.includes(c.id),
+  ).length;
+  const overallPercent =
+    enrolledCourses.length > 0
+      ? Math.round((completedCount / enrolledCourses.length) * 100)
+      : 0;
+
+  const handleToggle = async (course: Course, completed: boolean) => {
+    setPendingId(course.id);
+    try {
+      await onSetCompleted(course.id, completed);
+      toast({
+        title: completed ? '수강 완료로 표시했습니다' : '완료 표시를 취소했습니다',
+        description: course.title,
+      });
+    } catch {
+      toast({
+        title: '처리하지 못했습니다',
+        description: '잠시 후 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setPendingId(null);
+    }
   };
 
   return (
@@ -60,12 +87,23 @@ export function MyStatusPage({ user, enrolledCourses }: MyStatusPageProps) {
           {/* Enrolled Courses */}
           {enrolledCourses.length > 0 ? (
             <div className="space-y-6">
-              <h2 className="text-2xl font-semibold text-foreground mb-6">
-                수강 중인 강의 ({enrolledCourses.length})
-              </h2>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                <h2 className="text-2xl font-semibold text-foreground">
+                  수강 중인 강의 ({enrolledCourses.length})
+                </h2>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground">
+                    전체 진행률
+                  </span>
+                  <span className="text-sm font-semibold text-brand-primary" data-testid="text-overall-progress">
+                    {completedCount} / {enrolledCourses.length} ({overallPercent}%)
+                  </span>
+                </div>
+              </div>
               <div className="grid grid-cols-1 gap-6">
                 {enrolledCourses.map((course) => {
-                  const progress = getProgress(course.id);
+                  const isCompleted = user.completedCourses.includes(course.id);
+                  const isPending = pendingId === course.id;
                   return (
                     <Card
                       key={course.id}
@@ -85,25 +123,41 @@ export function MyStatusPage({ user, enrolledCourses }: MyStatusPageProps) {
                               기간: <span data-testid="text-course-weeks">{course.weeks}주</span>
                             </p>
                           </div>
-                          <Link href={`/course/${course.id}`}>
-                            <Button variant="default" className="gap-2 whitespace-nowrap" data-testid={`button-enter-course-${course.id}`} asChild>
-                              <span className="cursor-pointer">
-                                강의실 입장
-                                <ArrowRight className="h-4 w-4" />
-                              </span>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <Link href={`/course/${course.id}`}>
+                              <Button variant="default" className="gap-2 whitespace-nowrap" data-testid={`button-enter-course-${course.id}`} asChild>
+                                <span className="cursor-pointer">
+                                  강의실 입장
+                                  <ArrowRight className="h-4 w-4" />
+                                </span>
+                              </Button>
+                            </Link>
+                            <Button
+                              variant={isCompleted ? 'outline' : 'secondary'}
+                              className="gap-2 whitespace-nowrap"
+                              disabled={isPending}
+                              onClick={() => handleToggle(course, !isCompleted)}
+                              data-testid={`button-toggle-completed-${course.id}`}
+                            >
+                              {isCompleted ? (
+                                <CheckCircle2 className="h-4 w-4 text-brand-primary" />
+                              ) : (
+                                <Circle className="h-4 w-4" />
+                              )}
+                              {isCompleted ? '완료됨' : '완료로 표시'}
                             </Button>
-                          </Link>
+                          </div>
                         </div>
 
                         {/* Progress Bar */}
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium text-foreground">학습 진척도</span>
+                            <span className="text-sm font-medium text-foreground">학습 상태</span>
                             <span className="text-sm font-medium text-brand-primary" data-testid={`text-progress-${course.id}`}>
-                              {progress}%
+                              {isCompleted ? '100%' : '0%'}
                             </span>
                           </div>
-                          <Progress value={progress} className="h-2" data-testid={`progress-${course.id}`} />
+                          <Progress value={isCompleted ? 100 : 0} className="h-2" data-testid={`progress-${course.id}`} />
                         </div>
                       </div>
                     </Card>

@@ -35,4 +35,16 @@ export interface User {
   name: string;
   role: 'student' | 'admin';
   enrolledCourses: number[];
+  /** Subset of enrolledCourses the student has marked as finished. */
+  completedCourses: number[];
+}
+
+/** Row shape for the admin user management list — no password, ever. */
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  name: string;
+  role: 'student' | 'admin';
+  createdAt: string;
+  enrolledCount: number;
 }

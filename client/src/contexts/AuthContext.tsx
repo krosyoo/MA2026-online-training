@@ -24,6 +24,7 @@ interface AuthContextType {
   ) => Promise<AuthResult>;
   enrollCourse: (courseId: number) => Promise<void>;
   unenrollCourse: (courseId: number) => Promise<void>;
+  setCourseCompleted: (courseId: number, completed: boolean) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -98,6 +99,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: setUser,
   });
 
+  const completionMutation = useMutation({
+    mutationFn: async ({
+      courseId,
+      completed,
+    }: {
+      courseId: number;
+      completed: boolean;
+    }) => {
+      const res = await apiRequest('PATCH', `/api/enrollments/${courseId}`, {
+        completed,
+      });
+      return (await res.json()) as User;
+    },
+    onSuccess: setUser,
+  });
+
   return (
     <AuthContext.Provider
       value={{
@@ -111,6 +128,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
         unenrollCourse: async (courseId) => {
           await unenrollMutation.mutateAsync(courseId);
+        },
+        setCourseCompleted: async (courseId, completed) => {
+          await completionMutation.mutateAsync({ courseId, completed });
         },
       }}
     >
