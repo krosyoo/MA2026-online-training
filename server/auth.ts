@@ -6,6 +6,7 @@ import {
 import { promisify } from "node:util";
 import type { NextFunction, Request, Response } from "express";
 import { SignJWT, jwtVerify } from "jose";
+import { ConfigurationError, sessionSecret } from "./env";
 import { getUserRole } from "./storage";
 
 const scrypt = promisify(scryptCallback) as (
@@ -30,13 +31,13 @@ declare module "express-serve-static-core" {
 }
 
 /**
- * Read lazily so a missing secret surfaces as a 500 on the routes that need it
- * rather than taking down every route, including /api/health.
+ * Read lazily so a missing secret surfaces on the routes that need it rather
+ * than taking down every route, including /api/health.
  */
 function getSecret(): Uint8Array {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) {
-    throw new Error(
+  const secret = sessionSecret();
+  if (!secret) {
+    throw new ConfigurationError(
       "SESSION_SECRET is missing or shorter than 32 characters. Generate one " +
         "with `openssl rand -base64 32` and add it to the project's " +
         "environment variables.",

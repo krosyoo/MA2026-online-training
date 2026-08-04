@@ -1,5 +1,6 @@
 import { Router, type Express, type Request, type Response } from "express";
 import { ZodError } from "zod";
+import { databaseUrl, sessionSecret } from "./env";
 import {
   curriculumUpdateSchema,
   enrollSchema,
@@ -47,8 +48,16 @@ export function registerRoutes(app: Express): void {
 
   api.use(attachSession);
 
+  /**
+   * Answers even when the deployment is only half-configured, and reports which
+   * settings are still missing. Booleans only — never the values themselves.
+   */
   api.get("/health", (_req, res) => {
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+      database: Boolean(databaseUrl()),
+      sessionSecret: Boolean(sessionSecret()),
+    });
   });
 
   // Auth ----------------------------------------------------------------------

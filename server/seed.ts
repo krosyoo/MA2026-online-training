@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { db } from "./db";
+import { getDb } from "./db";
 import { books, courses, semesters } from "../shared/schema";
 import { INITIAL_SEMESTERS } from "../shared/data";
 import { hashPassword } from "./auth";
@@ -14,7 +14,7 @@ export interface SeedResult {
 }
 
 async function isCurriculumEmpty(): Promise<boolean> {
-  const [row] = await db.select({ id: semesters.id }).from(semesters).limit(1);
+  const [row] = await getDb().select({ id: semesters.id }).from(semesters).limit(1);
   return !row;
 }
 
@@ -69,9 +69,9 @@ export async function seedCurriculum(): Promise<SeedResult> {
       ),
     );
 
-    await db.insert(semesters).values(semesterRows);
-    if (courseRows.length > 0) await db.insert(courses).values(courseRows);
-    if (bookRows.length > 0) await db.insert(books).values(bookRows);
+    await getDb().insert(semesters).values(semesterRows);
+    if (courseRows.length > 0) await getDb().insert(courses).values(courseRows);
+    if (bookRows.length > 0) await getDb().insert(books).values(bookRows);
 
     result.seeded = true;
     result.semesters = semesterRows.length;

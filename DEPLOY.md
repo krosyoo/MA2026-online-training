@@ -70,7 +70,17 @@ curl -X POST https://<your-project>.vercel.app/api/seed \
 
 ## 6. 확인
 
-- `https://<your-project>.vercel.app/api/health` → `{"ok":true}`
+먼저 상태 점검 엔드포인트를 봅니다. 설정이 덜 끝난 상태에서도 항상 응답하며, 무엇이
+빠졌는지 알려줍니다.
+
+```
+https://<your-project>.vercel.app/api/health
+→ {"ok":true,"database":true,"sessionSecret":true}
+```
+
+`database` 또는 `sessionSecret`이 `false`면 해당 환경변수를 넣고 재배포하세요.
+설정이 빠진 상태에서 API를 호출하면 503과 함께 어떤 변수가 없는지 알려줍니다.
+
 - 홈에서 4개 학기가 보이면 DB 연결 성공
 - `ADMIN_EMAIL` 계정으로 로그인 후 `/admin` 접속 → 강의 정보 수정 후 저장 → 새로고침해도
   값이 유지되면 정상

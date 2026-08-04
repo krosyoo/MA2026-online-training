@@ -1,5 +1,5 @@
 import { and, asc, eq, sql } from "drizzle-orm";
-import { db } from "./db";
+import { getDb } from "./db";
 import {
   books,
   courses,
@@ -23,12 +23,15 @@ export class EmailTakenError extends Error {
 
 export async function getCurriculum(): Promise<Semester[]> {
   const [semesterRows, courseRows, bookRows] = await Promise.all([
-    db
+    getDb()
       .select()
       .from(semesters)
       .orderBy(asc(semesters.sortOrder), asc(semesters.id)),
-    db.select().from(courses).orderBy(asc(courses.sortOrder), asc(courses.id)),
-    db.select().from(books).orderBy(asc(books.sortOrder), asc(books.id)),
+    getDb()
+      .select()
+      .from(courses)
+      .orderBy(asc(courses.sortOrder), asc(courses.id)),
+    getDb().select().from(books).orderBy(asc(books.sortOrder), asc(books.id)),
   ]);
 
   return semesterRows.map((semester) => {
@@ -90,7 +93,7 @@ export async function updateCurriculum(
       ),
       sql`, `,
     );
-    await db.execute(sql`
+    await getDb().execute(sql`
       UPDATE ${semesters} AS s
       SET title = v.title, subtitle = v.subtitle, description = v.description
       FROM (VALUES ${rows}) AS v(id, title, subtitle, description)
@@ -107,7 +110,7 @@ export async function updateCurriculum(
       ),
       sql`, `,
     );
-    await db.execute(sql`
+    await getDb().execute(sql`
       UPDATE ${courses} AS c
       SET title = v.title,
           weeks = v.weeks,
@@ -121,7 +124,7 @@ export async function updateCurriculum(
 }
 
 export async function courseExists(courseId: number): Promise<boolean> {
-  const [row] = await db
+  const [row] = await getDb()
     .select({ id: courses.id })
     .from(courses)
     .where(eq(courses.id, courseId))
@@ -134,7 +137,7 @@ export async function courseExists(courseId: number): Promise<boolean> {
 export async function getUserByEmail(
   email: string,
 ): Promise<UserRow | undefined> {
-  const [row] = await db
+  const [row] = await getDb()
     .select()
     .from(users)
     .where(eq(users.email, email.toLowerCase()))
@@ -145,7 +148,7 @@ export async function getUserByEmail(
 export async function getUserRole(
   id: string,
 ): Promise<"student" | "admin" | undefined> {
-  const [row] = await db
+  const [row] = await getDb()
     .select({ role: users.role })
     .from(users)
     .where(eq(users.id, id))
@@ -160,7 +163,7 @@ export async function createUser(input: {
   role?: "student" | "admin";
 }): Promise<UserRow> {
   try {
-    const [row] = await db
+    const [row] = await getDb()
       .insert(users)
       .values({
         email: input.email.toLowerCase(),
@@ -184,7 +187,7 @@ export async function createUser(input: {
  * UI reads directly off the session user.
  */
 export async function getSessionUser(id: string): Promise<User | undefined> {
-  const [row] = await db
+  const [row] = await getDb()
     .select({
       id: users.id,
       email: users.email,
@@ -197,7 +200,7 @@ export async function getSessionUser(id: string): Promise<User | undefined> {
 
   if (!row) return undefined;
 
-  const enrolled = await db
+  const enrolled = await getDb()
     .select({ courseId: enrollments.courseId })
     .from(enrollments)
     .where(eq(enrollments.userId, id))
@@ -212,7 +215,7 @@ export async function enroll(
   userId: string,
   courseId: number,
 ): Promise<void> {
-  await db
+  await getDb()
     .insert(enrollments)
     .values({ userId, courseId })
     .onConflictDoNothing();
@@ -222,7 +225,7 @@ export async function unenroll(
   userId: string,
   courseId: number,
 ): Promise<void> {
-  await db
+  await getDb()
     .delete(enrollments)
     .where(
       and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId)),
