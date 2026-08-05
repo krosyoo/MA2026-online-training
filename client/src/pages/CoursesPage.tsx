@@ -1,12 +1,19 @@
-import { Semester } from '@shared/types';
+import { Semester, User } from '@shared/types';
 import { CourseCard } from '@/components/CourseCard';
 import { Library } from 'lucide-react';
 
 interface CoursesPageProps {
   semesters: Semester[];
+  user: User | null;
 }
 
-export function CoursesPage({ semesters }: CoursesPageProps) {
+export function CoursesPage({ semesters, user }: CoursesPageProps) {
+  const statusOf = (courseId: number): 'none' | 'enrolled' | 'completed' => {
+    if (!user) return 'none';
+    if (user.completedCourses.includes(courseId)) return 'completed';
+    return user.enrolledCourses.includes(courseId) ? 'enrolled' : 'none';
+  };
+
   return (
     <div className="min-h-screen bg-background py-12">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -44,7 +51,11 @@ export function CoursesPage({ semesters }: CoursesPageProps) {
                 {/* Courses Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {semester.courses.map((course) => (
-                    <CourseCard key={course.id} course={course} />
+                    <CourseCard
+                      key={course.id}
+                      course={course}
+                      status={statusOf(course.id)}
+                    />
                   ))}
                 </div>
               </div>

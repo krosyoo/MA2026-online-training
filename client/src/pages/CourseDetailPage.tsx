@@ -1,27 +1,47 @@
-import { Course, User } from '@shared/types';
+import { useState } from 'react';
+import { Course, Semester, User } from '@shared/types';
 import { Link } from 'wouter';
 import { YouTubeEmbed } from '@/components/YouTubeEmbed';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Clock, User as UserIcon, Download, ChevronLeft } from 'lucide-react';
+import {
+  Clock,
+  User as UserIcon,
+  ChevronLeft,
+  CheckCircle2,
+  Circle,
+  ExternalLink,
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface CourseDetailPageProps {
   course: Course | undefined;
+  /** The semester the course sits in, for its reading list. */
+  semester: Semester | undefined;
   user: User | null;
   isEnrolled: boolean;
+  isCompleted: boolean;
   onEnroll: (courseId: number) => Promise<void>;
   onUnenroll: (courseId: number) => Promise<void>;
+  onSetCompleted: (courseId: number, completed: boolean) => Promise<void>;
 }
 
 export function CourseDetailPage({
   course,
+  semester,
   user,
   isEnrolled,
+  isCompleted,
   onEnroll,
   onUnenroll,
+  onSetCompleted,
 }: CourseDetailPageProps) {
   const { toast } = useToast();
+  const [isTogglingCompletion, setIsTogglingCompletion] = useState(false);
+
+  const semesterBooks = semester
+    ? [...semester.books.lecture, ...semester.books.required]
+    : [];
 
   if (!course) {
     return (
@@ -65,6 +85,30 @@ export function CourseDetailPage({
         description: '잠시 후 다시 시도해주세요.',
         variant: 'destructive',
       });
+    }
+  };
+
+  /**
+   * Offered here as well as on the status page: this is the screen a student
+   * is on when they finish watching, so making them navigate elsewhere to
+   * record it is the wrong shape.
+   */
+  const handleToggleCompleted = async () => {
+    setIsTogglingCompletion(true);
+    try {
+      await onSetCompleted(course.id, !isCompleted);
+      toast({
+        title: isCompleted ? '완료 표시를 취소했습니다' : '수강 완료로 표시했습니다',
+        description: course.title,
+      });
+    } catch {
+      toast({
+        title: '처리하지 못했습니다',
+        description: '잠시 후 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsTogglingCompletion(false);
     }
   };
 
@@ -132,19 +176,35 @@ export function CourseDetailPage({
                 {user ? (
                   <div>
                     <p className="text-sm text-muted-foreground mb-4">
-                      {isEnrolled
-                        ? '이미 이 강의를 수강 중입니다. 나의 수강현황에서 학습 진행 상황을 확인하세요.'
-                        : '이 강의를 수강하시겠습니까? 수강 신청 후 언제든지 강의를 시청할 수 있습니다.'}
+                      {isCompleted
+                        ? '이 강의를 완료하셨습니다. 다시 시청하실 수 있습니다.'
+                        : isEnrolled
+                          ? '이 강의를 수강 중입니다. 다 보셨다면 아래에서 완료로 표시해주세요.'
+                          : '이 강의를 수강하시겠습니까? 수강 신청 후 언제든지 강의를 시청할 수 있습니다.'}
                     </p>
                     {isEnrolled ? (
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant={isCompleted ? 'outline' : 'default'}
+                          className="gap-2"
+                          disabled={isTogglingCompletion}
+                          onClick={handleToggleCompleted}
+                          data-testid="button-toggle-completed"
+                        >
+                          {isCompleted ? (
+                            <CheckCircle2 className="h-4 w-4 text-brand-primary" />
+                          ) : (
+                            <Circle className="h-4 w-4" />
+                          )}
+                          {isCompleted ? '완료됨' : '수강 완료로 표시'}
+                        </Button>
                         <Link href="/my-status">
-                          <Button variant="default" data-testid="button-my-status" asChild>
+                          <Button variant="outline" data-testid="button-my-status" asChild>
                             <span className="cursor-pointer">나의 수강현황 보기</span>
                           </Button>
                         </Link>
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           onClick={handleUnenroll}
                           data-testid="button-unenroll"
                         >
@@ -176,17 +236,40 @@ export function CourseDetailPage({
               </div>
             </Card>
 
-            {/* Materials Section */}
+            {/* Reading list for the semester this course belongs to. Replaces a
+                permanently disabled "materials download" button that promised a
+                feature nobody was building — this shows books the curriculum
+                already lists. */}
             <Card>
               <div className="p-6">
-                <h2 className="text-xl font-semibold text-foreground mb-4">강의 자료</h2>
-                <p className="text-sm text-muted-foreground mb-4">
-                  강의 자료 다운로드 기능은 준비 중입니다.
-                </p>
-                <Button variant="outline" disabled className="w-full gap-2" data-testid="button-download">
-                  <Download className="h-4 w-4" />
-                  자료 다운로드
-                </Button>
+                <h2 className="text-xl font-semibold text-foreground mb-4">이 학기의 도서</h2>
+                {semesterBooks.length > 0 ? (
+                  <ul className="space-y-3" data-testid="list-course-books">
+                    {semesterBooks.map((book, index) => (
+                      <li key={`${book.title}-${index}`}>
+                        <a
+                          href={book.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group block"
+                          data-testid="link-course-book"
+                        >
+                          <span className="text-sm font-medium text-foreground group-hover:text-brand-primary transition-colors">
+                            {book.title}
+                          </span>
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            {book.publisher}
+                            <ExternalLink className="h-3 w-3" />
+                          </span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground" data-testid="text-no-course-books">
+                    등록된 도서가 없습니다.
+                  </p>
+                )}
               </div>
             </Card>
           </div>
