@@ -17,11 +17,19 @@ function formatDate(iso: string | null): string {
 }
 
 /**
- * Quotes a CSV field. Excel on Korean Windows needs the BOM added by the
- * caller; the quoting here just protects commas, quotes and newlines.
+ * Escapes a CSV field.
+ *
+ * Quoting alone protects the file's structure but not its contents: Excel and
+ * LibreOffice strip the surrounding quotes and then evaluate any field that
+ * starts with `=`, `+`, `-` or `@` as a formula. Student names come straight
+ * from self-registration, so a name like `=HYPERLINK(...)` would execute in
+ * the admin's spreadsheet — with the roster's other names and emails in
+ * adjacent cells. A leading apostrophe forces Excel to treat the value as
+ * literal text.
  */
 function csvField(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
+  const literal = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${literal.replace(/"/g, '""')}"`;
 }
 
 function toCsv(rows: EnrollmentRecord[]): string {
