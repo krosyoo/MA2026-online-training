@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminUserSummary, Book, Semester, User } from '@shared/types';
 import type { CourseCreateInput, SemesterCreateInput } from '@shared/schema';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Shield, Save, Plus, Trash2, Users, KeyRound, ShieldCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, ApiError } from '@/lib/queryClient';
+import { EnrollmentRoster } from '@/components/admin/EnrollmentRoster';
 
 interface AdminPageProps {
   user: User | null;
@@ -61,6 +62,7 @@ export function AdminPage({
   const [newCourseDrafts, setNewCourseDrafts] = useState<Record<number, CourseCreateInput>>({});
   const [creatingCourseFor, setCreatingCourseFor] = useState<number | null>(null);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
+  const [userSearch, setUserSearch] = useState('');
 
   const isAdmin = Boolean(user && user.role === 'admin');
 
@@ -76,6 +78,16 @@ export function AdminPage({
     queryKey: ['/api/admin/users'],
     enabled: isAdmin,
   });
+
+  const visibleUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    const all = adminUsers ?? [];
+    if (!q) return all;
+    return all.filter(
+      (u) =>
+        u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q),
+    );
+  }, [adminUsers, userSearch]);
 
   const resetPasswordMutation = useMutation({
     mutationFn: async (userId: string) => {
@@ -389,19 +401,35 @@ export function AdminPage({
             </p>
           </div>
 
+          {/* Enrolment roster — who signed up for what, and who finished */}
+          <EnrollmentRoster />
+
           {/* User Management */}
           <Card className="mb-12" data-testid="card-user-management">
             <div className="p-6">
-              <div className="flex items-center gap-2 mb-6">
-                <Users className="h-5 w-5 text-brand-primary" />
-                <h2 className="text-xl font-semibold text-foreground">사용자 관리</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-brand-primary" />
+                  <h2 className="text-xl font-semibold text-foreground">사용자 관리</h2>
+                </div>
+                <Input
+                  placeholder="이름 또는 이메일로 검색"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  className="sm:max-w-xs sm:ml-auto"
+                  data-testid="input-user-search"
+                />
               </div>
 
               {isUsersLoading ? (
                 <p className="text-sm text-muted-foreground">불러오는 중…</p>
+              ) : visibleUsers.length === 0 ? (
+                <p className="text-sm text-muted-foreground" data-testid="text-no-matching-users">
+                  {userSearch ? '검색 조건에 맞는 사용자가 없습니다.' : '사용자가 없습니다.'}
+                </p>
               ) : (
                 <div className="space-y-3">
-                  {(adminUsers ?? []).map((u) => (
+                  {visibleUsers.map((u) => (
                     <div
                       key={u.id}
                       className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 border rounded-lg"
@@ -415,7 +443,7 @@ export function AdminPage({
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          {u.email} · 수강 {u.enrolledCount}건
+                          {u.email} · 수강 {u.enrolledCount}건 (완료 {u.completedCount}건)
                         </p>
                         {revealedPasswords[u.id] && (
                           <p className="text-sm mt-1" data-testid={`text-temp-password-${u.id}`}>

@@ -83,22 +83,29 @@ function Router() {
           </Route>
           
           <Route path="/courses">
-            <CoursesPage semesters={semesters} />
+            <CoursesPage semesters={semesters} user={user} />
           </Route>
-          
+
           <Route path="/course/:id">
             {(params) => {
               const courseId = parseInt(params.id);
               const course = allCourses.find(c => c.id === courseId);
+              const semester = semesters.find(s =>
+                s.courses.some(c => c.id === courseId),
+              );
               const isEnrolled = user?.enrolledCourses.includes(courseId) || false;
-              
+              const isCompleted = user?.completedCourses.includes(courseId) || false;
+
               return (
                 <CourseDetailPage
                   course={course}
+                  semester={semester}
                   user={user}
                   isEnrolled={isEnrolled}
+                  isCompleted={isCompleted}
                   onEnroll={enrollCourse}
                   onUnenroll={unenrollCourse}
+                  onSetCompleted={setCourseCompleted}
                 />
               );
             }}
