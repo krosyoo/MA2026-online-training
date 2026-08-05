@@ -55,6 +55,7 @@ export async function getCurriculum(): Promise<Semester[]> {
 
     return {
       id: semester.id,
+      version: semester.version,
       title: semester.title,
       subtitle: semester.subtitle,
       description: semester.description,
@@ -77,6 +78,16 @@ export async function getCurriculum(): Promise<Semester[]> {
   });
 }
 
+/** Raised when another admin saved the same semester first. */
+export class CurriculumConflictError extends Error {
+  constructor() {
+    super(
+      "다른 관리자가 먼저 저장했습니다. 최신 내용을 다시 불러온 뒤 수정해주세요.",
+    );
+    this.name = "CurriculumConflictError";
+  }
+}
+
 /**
  * Applies the admin dashboard's edits. Semester and course rows are updated
  * in place — never deleted and re-inserted — so that existing enrollments
@@ -84,8 +95,15 @@ export async function getCurriculum(): Promise<Semester[]> {
  * are fully replaced instead, which is safe because nothing references a
  * book row.
  *
- * Every step is a single statement, which keeps it atomic per table without
- * needing interactive transactions (unavailable on Neon's HTTP driver).
+ * Concurrency: each semester carries a version the dashboard loaded. The
+ * update is guarded on it and bumps it, and the guard is evaluated inside the
+ * same statement as the write, so two admins saving at once cannot both
+ * succeed. If any semester's version has moved, nothing is written at all —
+ * the CTE below makes it all-or-nothing rather than leaving a half-applied
+ * save. Later steps only run once that check has passed.
+ *
+ * Every step is a single statement, which keeps it atomic without needing
+ * interactive transactions (unavailable on Neon's HTTP driver).
  */
 export async function updateCurriculum(
   payload: CurriculumUpdate,
@@ -95,16 +113,39 @@ export async function updateCurriculum(
   const semesterRows = sql.join(
     payload.map(
       (s) =>
-        sql`(${s.id}::integer, ${s.title}::text, ${s.subtitle}::text, ${s.description}::text)`,
+        sql`(${s.id}::integer, ${s.version}::integer, ${s.title}::text, ${s.subtitle}::text, ${s.description}::text)`,
     ),
     sql`, `,
   );
-  await getDb().execute(sql`
-    UPDATE ${semesters} AS s
-    SET title = v.title, subtitle = v.subtitle, description = v.description
-    FROM (VALUES ${semesterRows}) AS v(id, title, subtitle, description)
-    WHERE s.id = v.id
+
+  const result = await getDb().execute(sql`
+    WITH v(id, version, title, subtitle, description) AS (
+      VALUES ${semesterRows}
+    ),
+    stale AS (
+      SELECT 1 FROM v JOIN semesters s ON s.id = v.id
+      WHERE s.version IS DISTINCT FROM v.version
+      LIMIT 1
+    ),
+    updated AS (
+      UPDATE semesters AS s
+      SET title = v.title,
+          subtitle = v.subtitle,
+          description = v.description,
+          version = s.version + 1
+      FROM v
+      WHERE s.id = v.id AND NOT EXISTS (SELECT 1 FROM stale)
+      RETURNING s.id
+    )
+    SELECT (SELECT count(*) FROM updated)::int AS updated_count
   `);
+
+  const updatedCount =
+    (result as unknown as { rows: { updated_count: number }[] }).rows[0]
+      ?.updated_count ?? 0;
+  if (updatedCount !== payload.length) {
+    throw new CurriculumConflictError();
+  }
 
   const courseUpdates = payload.flatMap((s) => s.courses);
   if (courseUpdates.length > 0) {
@@ -167,17 +208,28 @@ export async function createSemester(
   `);
 }
 
+/**
+ * Adding or removing a course changes what the semester contains, so its
+ * version moves too. That forces any dashboard still holding the old course
+ * list to reload before it can save, instead of writing against a list that
+ * no longer matches the database.
+ */
 export async function createCourse(
   semesterId: number,
   input: CourseCreateInput,
 ): Promise<void> {
   await getDb().execute(sql`
-    INSERT INTO courses (id, semester_id, title, weeks, description, instructor, video_url, sort_order)
-    VALUES (
-      (SELECT COALESCE(MAX(id), 0) + 1 FROM courses),
-      ${semesterId}, ${input.title}, ${input.weeks}, ${input.description}, ${input.instructor}, ${input.videoUrl},
-      (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM courses WHERE semester_id = ${semesterId})
+    WITH inserted AS (
+      INSERT INTO courses (id, semester_id, title, weeks, description, instructor, video_url, sort_order)
+      VALUES (
+        (SELECT COALESCE(MAX(id), 0) + 1 FROM courses),
+        ${semesterId}, ${input.title}, ${input.weeks}, ${input.description}, ${input.instructor}, ${input.videoUrl},
+        (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM courses WHERE semester_id = ${semesterId})
+      )
+      RETURNING semester_id
     )
+    UPDATE semesters SET version = version + 1
+    WHERE id = (SELECT semester_id FROM inserted)
   `);
 }
 
@@ -186,7 +238,13 @@ export async function deleteSemester(semesterId: number): Promise<void> {
 }
 
 export async function deleteCourse(courseId: number): Promise<void> {
-  await getDb().delete(courses).where(eq(courses.id, courseId));
+  await getDb().execute(sql`
+    WITH removed AS (
+      DELETE FROM courses WHERE id = ${courseId} RETURNING semester_id
+    )
+    UPDATE semesters SET version = version + 1
+    WHERE id = (SELECT semester_id FROM removed)
+  `);
 }
 
 export async function semesterExists(semesterId: number): Promise<boolean> {

@@ -1,10 +1,15 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-/** Carries the status and the API's own message so callers can show it. */
+/**
+ * Carries the status, the API's own message, and the parsed body — some
+ * failures ship data the caller needs (a 409 conflict returns the current
+ * server state so the UI can show what it missed).
+ */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly body?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -18,14 +23,20 @@ async function throwIfResNotOk(res: Response) {
   // The API answers with { message }, but an infrastructure error (a proxy, a
   // crashed function) can return HTML or plain text instead.
   let message = text;
+  let body: unknown;
   try {
-    const parsed = JSON.parse(text);
-    if (parsed && typeof parsed.message === "string") message = parsed.message;
+    body = JSON.parse(text);
+    if (
+      body &&
+      typeof (body as { message?: unknown }).message === "string"
+    ) {
+      message = (body as { message: string }).message;
+    }
   } catch {
     message = `${res.status}: ${text}`;
   }
 
-  throw new ApiError(res.status, message);
+  throw new ApiError(res.status, message, body);
 }
 
 export async function apiRequest(

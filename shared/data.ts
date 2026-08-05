@@ -1,6 +1,6 @@
-import { Semester } from './types';
+import { SeedSemester } from './types';
 
-export const INITIAL_SEMESTERS: Semester[] = [
+export const INITIAL_SEMESTERS: SeedSemester[] = [
   {
     id: 1,
     title: '1학기. 믿음반',

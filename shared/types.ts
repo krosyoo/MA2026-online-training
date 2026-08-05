@@ -17,6 +17,8 @@ export interface Course {
 
 export interface Semester {
   id: number;
+  /** Optimistic-locking counter; sent back on save to detect concurrent edits. */
+  version: number;
   title: string;
   subtitle: string;
   description: string;
@@ -27,6 +29,12 @@ export interface Semester {
     recommended: Book[];
   };
 }
+
+/**
+ * Curriculum as it appears in `shared/data.ts`. Seed input has no version —
+ * the database assigns one on insert.
+ */
+export type SeedSemester = Omit<Semester, 'version'>;
 
 /** The user as it is sent to the browser — never carries the password hash. */
 export interface User {
