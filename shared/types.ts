@@ -57,4 +57,20 @@ export interface AdminUserSummary {
   role: 'student' | 'admin';
   createdAt: string;
   enrolledCount: number;
+  completedCount: number;
+}
+
+/** One student's enrolment in one course, as the admin roster shows it. */
+export interface EnrollmentRecord {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  courseId: number;
+  courseTitle: string;
+  semesterId: number;
+  semesterTitle: string;
+  completed: boolean;
+  /** ISO timestamps; completedAt is null while the course is in progress. */
+  enrolledAt: string;
+  completedAt: string | null;
 }

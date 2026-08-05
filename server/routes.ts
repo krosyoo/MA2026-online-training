@@ -43,6 +43,7 @@ import {
   getSessionUser,
   getUserByEmail,
   getUserById,
+  listEnrollments,
   listUsers,
   recordLoginFailure,
   resetLoginFailures,
@@ -399,6 +400,15 @@ export function registerRoutes(app: Express): void {
     requireAdmin,
     asyncHandler(async (_req, res) => {
       res.json(await listUsers());
+    }),
+  );
+
+  /** The full enrolment roster: who signed up for what, and who finished. */
+  api.get(
+    "/admin/enrollments",
+    requireAdmin,
+    asyncHandler(async (_req, res) => {
+      res.json(await listEnrollments());
     }),
   );
 

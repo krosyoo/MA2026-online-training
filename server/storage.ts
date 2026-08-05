@@ -11,7 +11,13 @@ import {
   type SemesterCreateInput,
   type UserRow,
 } from "../shared/schema";
-import type { AdminUserSummary, Book, Semester, User } from "../shared/types";
+import type {
+  AdminUserSummary,
+  Book,
+  EnrollmentRecord,
+  Semester,
+  User,
+} from "../shared/types";
 
 /** Raised when a signup collides with an existing account. */
 export class EmailTakenError extends Error {
@@ -358,10 +364,14 @@ export async function listUsers(): Promise<AdminUserSummary[]> {
     .orderBy(asc(users.createdAt));
 
   const counts = await getDb()
-    .select({ userId: enrollments.userId, count: sql<number>`count(*)::int` })
+    .select({
+      userId: enrollments.userId,
+      enrolled: sql<number>`count(*)::int`,
+      completed: sql<number>`count(*) FILTER (WHERE ${enrollments.completed})::int`,
+    })
     .from(enrollments)
     .groupBy(enrollments.userId);
-  const countByUser = new Map(counts.map((c) => [c.userId, c.count]));
+  const countByUser = new Map(counts.map((c) => [c.userId, c]));
 
   return rows.map((r) => ({
     id: r.id,
@@ -369,7 +379,48 @@ export async function listUsers(): Promise<AdminUserSummary[]> {
     name: r.name,
     role: r.role,
     createdAt: r.createdAt.toISOString(),
-    enrolledCount: countByUser.get(r.id) ?? 0,
+    enrolledCount: countByUser.get(r.id)?.enrolled ?? 0,
+    completedCount: countByUser.get(r.id)?.completed ?? 0,
+  }));
+}
+
+/**
+ * Every enrolment, joined out to the names the admin actually needs to read.
+ * This is the roster behind "who signed up for what, and who finished" — the
+ * dashboard previously showed only a per-user count, which is not enough to
+ * run a training programme.
+ *
+ * Returned whole rather than paginated: the roster is one row per enrolment
+ * for a single church's intake, and the client filters and exports from it.
+ */
+export async function listEnrollments(): Promise<EnrollmentRecord[]> {
+  const rows = await getDb()
+    .select({
+      userId: users.id,
+      userName: users.name,
+      userEmail: users.email,
+      courseId: courses.id,
+      courseTitle: courses.title,
+      semesterId: semesters.id,
+      semesterTitle: semesters.title,
+      completed: enrollments.completed,
+      enrolledAt: enrollments.createdAt,
+      completedAt: enrollments.completedAt,
+    })
+    .from(enrollments)
+    .innerJoin(users, eq(enrollments.userId, users.id))
+    .innerJoin(courses, eq(enrollments.courseId, courses.id))
+    .innerJoin(semesters, eq(courses.semesterId, semesters.id))
+    .orderBy(
+      asc(semesters.sortOrder),
+      asc(courses.sortOrder),
+      asc(users.name),
+    );
+
+  return rows.map((r) => ({
+    ...r,
+    enrolledAt: r.enrolledAt.toISOString(),
+    completedAt: r.completedAt?.toISOString() ?? null,
   }));
 }
 
