@@ -47,6 +47,25 @@ async function hitRateLimit(
 }
 
 /**
+ * Every distinct client IP leaves a row behind, so without this the table
+ * grows without bound. Swept opportunistically rather than on a schedule,
+ * because serverless has nowhere to run a periodic job.
+ */
+const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+let lastSweep = 0;
+
+async function sweepExpired(): Promise<void> {
+  if (Date.now() - lastSweep < SWEEP_INTERVAL_MS) return;
+  lastSweep = Date.now();
+
+  const cutoff = new Date(Date.now() - STALE_AFTER_MS).toISOString();
+  await getDb().execute(
+    sql`DELETE FROM rate_limits WHERE window_start < ${cutoff}::timestamp`,
+  );
+}
+
+/**
  * Throttles a route by client IP. Applied to /auth/login and /auth/signup to
  * blunt credential stuffing and signup spam — the per-account lockout in
  * server/storage.ts (recordLoginFailure) is the defense against brute-forcing
@@ -59,6 +78,9 @@ export function rateLimitByIp(
 ) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+      // Best-effort housekeeping; a failure here must not block the request.
+      await sweepExpired().catch(() => {});
+
       const result = await hitRateLimit(`${bucket}:${req.ip ?? "unknown"}`, windowMs, max);
       if (!result.allowed) {
         res.setHeader("Retry-After", String(result.retryAfterSeconds));

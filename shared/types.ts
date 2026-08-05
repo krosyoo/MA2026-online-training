@@ -37,6 +37,8 @@ export interface User {
   enrolledCourses: number[];
   /** Subset of enrolledCourses the student has marked as finished. */
   completedCourses: number[];
+  /** True while the account is still on an admin-issued temporary password. */
+  mustChangePassword: boolean;
 }
 
 /** Row shape for the admin user management list — no password, ever. */

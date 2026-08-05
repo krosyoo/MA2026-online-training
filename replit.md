@@ -62,7 +62,11 @@ Preferred communication style: Simple, everyday language.
 
 **Brute-force protection**: A known account locks for 15 minutes after 5 consecutive failed logins (`users.failedAttempts`/`lockedUntil`, `server/storage.ts`). `/api/auth/login` and `/api/auth/signup` are also throttled per IP (`server/rateLimit.ts`, backed by the `rate_limits` table) to blunt credential stuffing and signup spam.
 
-**Password recovery**: No email provider is configured, so forgotten passwords are admin-mediated — the admin dashboard's user list can generate a one-time temporary password (`POST /api/admin/users/:id/reset-password`), returned once and never stored in plaintext.
+**Session invalidation**: The JWT carries the account's `tokenVersion`, re-checked against the database on every request (`attachSession`). Changing a password, resetting one, or changing a role bumps it, so existing cookies stop working immediately instead of surviving until expiry. Without this, resetting a compromised account's password would not actually lock the attacker out. The same lookup returns the live role, so a demotion also takes effect at once.
+
+**Password recovery**: No email provider is configured, so forgotten passwords are admin-mediated — the admin dashboard's user list can generate a one-time temporary password (`POST /api/admin/users/:id/reset-password`), returned once and never stored in plaintext. It sets `mustChangePassword`, which the UI surfaces until the user picks their own via `/profile`.
+
+**Admin continuity**: The last remaining admin cannot be demoted or deleted, and nobody can delete themselves — otherwise a deployment could end up with no way into the dashboard. If admin access is lost anyway, re-running `npm run db:seed` with `ADMIN_EMAIL`/`ADMIN_PASSWORD` promotes that account and resets its password.
 
 **Authorization Levels**:
 - Public: Landing page, course browsing, `GET /api/semesters`

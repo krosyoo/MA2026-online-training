@@ -14,6 +14,7 @@ import { CourseDetailPage } from "@/pages/CourseDetailPage";
 import { MyStatusPage } from "@/pages/MyStatusPage";
 import { AdminPage } from "@/pages/AdminPage";
 import { AuthPage } from "@/pages/AuthPage";
+import { ProfilePage } from "@/pages/ProfilePage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -26,6 +27,7 @@ function Router() {
     enrollCourse,
     unenrollCourse,
     setCourseCompleted,
+    changePassword,
   } = useAuth();
   const {
     semesters,
@@ -122,6 +124,10 @@ function Router() {
             />
           </Route>
           
+          <Route path="/profile">
+            <ProfilePage user={user} onChangePassword={changePassword} />
+          </Route>
+
           <Route path="/auth">
             <AuthPage onLogin={login} onSignup={signup} />
           </Route>

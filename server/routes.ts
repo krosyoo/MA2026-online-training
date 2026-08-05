@@ -3,6 +3,8 @@ import { ZodError } from "zod";
 import { databaseUrl, sessionSecret } from "./env";
 import {
   adminResetPasswordSchema,
+  adminUpdateUserSchema,
+  changePasswordSchema,
   courseCreateSchema,
   curriculumUpdateSchema,
   enrollSchema,
@@ -25,6 +27,7 @@ import {
 import { rateLimitByIp } from "./rateLimit";
 import {
   EmailTakenError,
+  countAdmins,
   countEnrollmentsForCourse,
   countEnrollmentsForSemester,
   courseExists,
@@ -33,6 +36,7 @@ import {
   createUser,
   deleteCourse,
   deleteSemester,
+  deleteUser,
   enroll,
   getCurriculum,
   getSessionUser,
@@ -44,6 +48,7 @@ import {
   semesterExists,
   setEnrollmentCompleted,
   setUserPassword,
+  setUserRole,
   unenroll,
   updateCurriculum,
 } from "./storage";
@@ -108,7 +113,11 @@ export function registerRoutes(app: Express): void {
 
         setSessionCookie(
           res,
-          await createSessionToken({ id: created.id, role: created.role }),
+          await createSessionToken({
+            id: created.id,
+            role: created.role,
+            tokenVersion: created.tokenVersion,
+          }),
         );
         res.status(201).json(await getSessionUser(created.id));
       } catch (error) {
@@ -162,7 +171,11 @@ export function registerRoutes(app: Express): void {
       await resetLoginFailures(account.id);
       setSessionCookie(
         res,
-        await createSessionToken({ id: account.id, role: account.role }),
+        await createSessionToken({
+          id: account.id,
+          role: account.role,
+          tokenVersion: account.tokenVersion,
+        }),
       );
       res.json(await getSessionUser(account.id));
     }),
@@ -189,6 +202,55 @@ export function registerRoutes(app: Express): void {
         return;
       }
       res.json(user);
+    }),
+  );
+
+  /**
+   * Self-service password change. Requires the current password so a hijacked
+   * open tab cannot lock the real owner out, and rotates tokenVersion so every
+   * other session for the account is dropped. The caller's own cookie is
+   * re-issued at the new version so they stay signed in here.
+   */
+  api.post(
+    "/auth/change-password",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      let input;
+      try {
+        input = changePasswordSchema.parse(req.body);
+      } catch (error) {
+        res.status(400).json({ message: validationMessage(error as ZodError) });
+        return;
+      }
+
+      const account = await getUserById(req.auth!.id);
+      if (!account) {
+        res.status(401).json({ message: "로그인이 필요합니다." });
+        return;
+      }
+
+      if (!(await verifyPassword(input.currentPassword, account.password))) {
+        res
+          .status(400)
+          .json({ message: "현재 비밀번호가 올바르지 않습니다." });
+        return;
+      }
+
+      const tokenVersion = await setUserPassword(
+        account.id,
+        await hashPassword(input.newPassword),
+        { mustChangePassword: false },
+      );
+
+      setSessionCookie(
+        res,
+        await createSessionToken({
+          id: account.id,
+          role: account.role,
+          tokenVersion,
+        }),
+      );
+      res.json(await getSessionUser(account.id));
     }),
   );
 
@@ -353,9 +415,82 @@ export function registerRoutes(app: Express): void {
       }
 
       const temporaryPassword = input.password ?? generateTemporaryPassword();
-      await setUserPassword(target.id, await hashPassword(temporaryPassword));
+      await setUserPassword(target.id, await hashPassword(temporaryPassword), {
+        mustChangePassword: true,
+      });
 
       res.json({ email: target.email, temporaryPassword });
+    }),
+  );
+
+  /**
+   * Role changes. The last remaining admin cannot be demoted — that would
+   * leave the deployment with no way back into the dashboard short of editing
+   * the database by hand.
+   */
+  api.patch(
+    "/admin/users/:id",
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      let input;
+      try {
+        input = adminUpdateUserSchema.parse(req.body);
+      } catch (error) {
+        res.status(400).json({ message: validationMessage(error as ZodError) });
+        return;
+      }
+
+      const target = await getUserById(req.params.id);
+      if (!target) {
+        res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+        return;
+      }
+      if (target.role === input.role) {
+        res.json(await listUsers());
+        return;
+      }
+
+      if (
+        target.role === "admin" &&
+        input.role === "student" &&
+        (await countAdmins()) <= 1
+      ) {
+        res.status(409).json({
+          message:
+            "마지막 관리자는 권한을 내릴 수 없습니다. 다른 관리자를 먼저 지정해주세요.",
+        });
+        return;
+      }
+
+      await setUserRole(target.id, input.role);
+      res.json(await listUsers());
+    }),
+  );
+
+  api.delete(
+    "/admin/users/:id",
+    requireAdmin,
+    asyncHandler(async (req, res) => {
+      const target = await getUserById(req.params.id);
+      if (!target) {
+        res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+        return;
+      }
+      if (target.id === req.auth!.id) {
+        res
+          .status(409)
+          .json({ message: "자기 자신은 삭제할 수 없습니다." });
+        return;
+      }
+      if (target.role === "admin" && (await countAdmins()) <= 1) {
+        res.status(409).json({
+          message: "마지막 관리자는 삭제할 수 없습니다.",
+        });
+        return;
+      }
+
+      await deleteUser(target.id);
+      res.json(await listUsers());
     }),
   );
 

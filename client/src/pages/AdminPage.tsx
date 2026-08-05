@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminUserSummary, Book, Semester, User } from '@shared/types';
 import type { CourseCreateInput, SemesterCreateInput } from '@shared/schema';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Save, Plus, Trash2, Users, KeyRound } from 'lucide-react';
+import { Shield, Save, Plus, Trash2, Users, KeyRound, ShieldCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, ApiError } from '@/lib/queryClient';
 
@@ -53,6 +53,7 @@ export function AdminPage({
   onDeleteCourse,
 }: AdminPageProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [editedSemesters, setEditedSemesters] = useState<Semester[]>(semesters);
   const [isSaving, setIsSaving] = useState(false);
   const [newSemester, setNewSemester] = useState(blankSemesterDraft);
@@ -91,6 +92,42 @@ export function AdminPage({
     onError: (error) => {
       toast({
         title: '재설정하지 못했습니다',
+        description: (error as Error).message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const setRoleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: string; role: 'student' | 'admin' }) => {
+      const res = await apiRequest('PATCH', `/api/admin/users/${userId}`, { role });
+      return (await res.json()) as AdminUserSummary[];
+    },
+    onSuccess: (rows) => {
+      queryClient.setQueryData(['/api/admin/users'], rows);
+      toast({ title: '권한을 변경했습니다' });
+    },
+    onError: (error) => {
+      toast({
+        title: '권한을 변경하지 못했습니다',
+        description: (error as Error).message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await apiRequest('DELETE', `/api/admin/users/${userId}`);
+      return (await res.json()) as AdminUserSummary[];
+    },
+    onSuccess: (rows) => {
+      queryClient.setQueryData(['/api/admin/users'], rows);
+      toast({ title: '사용자를 삭제했습니다' });
+    },
+    onError: (error) => {
+      toast({
+        title: '삭제하지 못했습니다',
         description: (error as Error).message,
         variant: 'destructive',
       });
@@ -375,17 +412,54 @@ export function AdminPage({
                           </p>
                         )}
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2 whitespace-nowrap"
-                        disabled={resetPasswordMutation.isPending}
-                        onClick={() => resetPasswordMutation.mutate(u.id)}
-                        data-testid={`button-reset-password-${u.id}`}
-                      >
-                        <KeyRound className="h-4 w-4" />
-                        비밀번호 재설정
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2 whitespace-nowrap"
+                          disabled={resetPasswordMutation.isPending}
+                          onClick={() => resetPasswordMutation.mutate(u.id)}
+                          data-testid={`button-reset-password-${u.id}`}
+                        >
+                          <KeyRound className="h-4 w-4" />
+                          비밀번호 재설정
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2 whitespace-nowrap"
+                          disabled={setRoleMutation.isPending}
+                          onClick={() =>
+                            setRoleMutation.mutate({
+                              userId: u.id,
+                              role: u.role === 'admin' ? 'student' : 'admin',
+                            })
+                          }
+                          data-testid={`button-toggle-role-${u.id}`}
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                          {u.role === 'admin' ? '학생으로' : '관리자로'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-2 whitespace-nowrap text-destructive hover:text-destructive"
+                          disabled={deleteUserMutation.isPending || u.id === user.id}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `"${u.name}"(${u.email}) 계정을 삭제하시겠습니까?\n수강 신청 내역도 함께 삭제되며 되돌릴 수 없습니다.`,
+                              )
+                            ) {
+                              deleteUserMutation.mutate(u.id);
+                            }
+                          }}
+                          data-testid={`button-delete-user-${u.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          삭제
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

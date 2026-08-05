@@ -25,6 +25,10 @@ interface AuthContextType {
   enrollCourse: (courseId: number) => Promise<void>;
   unenrollCourse: (courseId: number) => Promise<void>;
   setCourseCompleted: (courseId: number, completed: boolean) => Promise<void>;
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<AuthResult>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -83,6 +87,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const changePassword = async (
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<AuthResult> => {
+    try {
+      const res = await apiRequest('POST', '/api/auth/change-password', {
+        currentPassword,
+        newPassword,
+      });
+      setUser(await res.json());
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: (error as Error).message };
+    }
+  };
+
   const enrollMutation = useMutation({
     mutationFn: async (courseId: number) => {
       const res = await apiRequest('POST', '/api/enrollments', { courseId });
@@ -132,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCourseCompleted: async (courseId, completed) => {
           await completionMutation.mutateAsync({ courseId, completed });
         },
+        changePassword,
       }}
     >
       {children}
