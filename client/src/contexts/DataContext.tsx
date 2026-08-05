@@ -2,7 +2,7 @@ import { createContext, useContext, ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Semester } from '@shared/types';
 import type { CourseCreateInput, SemesterCreateInput } from '@shared/schema';
-import { apiRequest } from '@/lib/queryClient';
+import { ApiError, apiRequest } from '@/lib/queryClient';
 
 interface DataContextType {
   semesters: Semester[];
@@ -37,6 +37,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // The endpoint only accepts the fields the dashboard can edit.
       const payload = semesters.map((semester) => ({
         id: semester.id,
+        version: semester.version,
         title: semester.title,
         subtitle: semester.subtitle,
         description: semester.description,
@@ -55,6 +56,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return (await res.json()) as Semester[];
     },
     onSuccess: applyCurriculum,
+    onError: (error) => {
+      // A concurrent-edit rejection ships the current server state. Adopt it
+      // so the admin is looking at what actually exists before retrying —
+      // retrying against the stale version would only conflict again.
+      if (error instanceof ApiError && error.status === 409) {
+        const latest = (error.body as { curriculum?: Semester[] })?.curriculum;
+        if (latest) applyCurriculum(latest);
+      }
+    },
   });
 
   const createSemesterMutation = useMutation({

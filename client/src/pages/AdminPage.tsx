@@ -243,7 +243,18 @@ export function AdminPage({
         title: '변경사항 저장 완료',
         description: '모든 학기, 강의, 도서 정보가 업데이트되었습니다.',
       });
-    } catch {
+    } catch (error) {
+      // The context already replaced the cache with the server's current
+      // state, so the form below is now showing the other admin's version.
+      if (error instanceof ApiError && error.status === 409) {
+        toast({
+          title: '저장되지 않았습니다',
+          description:
+            '다른 관리자가 먼저 저장했습니다. 화면을 최신 내용으로 새로 불러왔으니, 수정하려던 내용을 다시 반영한 뒤 저장해주세요.',
+          variant: 'destructive',
+        });
+        return;
+      }
       toast({
         title: '저장 실패',
         description: '변경사항을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.',

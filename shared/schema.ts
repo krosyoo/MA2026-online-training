@@ -40,6 +40,13 @@ export const semesters = pgTable("semesters", {
   subtitle: text("subtitle").notNull(),
   description: text("description").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
+  /**
+   * Optimistic-locking counter for the whole semester, including its courses
+   * and books. The admin dashboard sends back the version it loaded; the save
+   * is rejected if it has moved on, so two admins editing at once cannot
+   * silently overwrite each other.
+   */
+  version: integer("version").notNull().default(0),
 });
 
 export const courses = pgTable("courses", {
@@ -157,6 +164,8 @@ const courseUpdateSchema = z.object({
 
 const semesterUpdateSchema = z.object({
   id: z.number().int(),
+  /** The version the dashboard loaded; the save is rejected if it has moved. */
+  version: z.number().int(),
   title: z.string().trim().min(1),
   subtitle: z.string(),
   description: z.string(),
