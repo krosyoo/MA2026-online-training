@@ -26,6 +26,7 @@ import {
 } from "./auth";
 import { rateLimitByIp } from "./rateLimit";
 import {
+  CurriculumConflictError,
   EmailTakenError,
   countAdmins,
   countEnrollmentsForCourse,
@@ -275,7 +276,18 @@ export function registerRoutes(app: Express): void {
         return;
       }
 
-      await updateCurriculum(input);
+      try {
+        await updateCurriculum(input);
+      } catch (error) {
+        if (error instanceof CurriculumConflictError) {
+          // Return the current state so the client can show what it missed.
+          res
+            .status(409)
+            .json({ message: error.message, curriculum: await getCurriculum() });
+          return;
+        }
+        throw error;
+      }
       res.json(await getCurriculum());
     }),
   );

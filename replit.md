@@ -75,7 +75,7 @@ Preferred communication style: Simple, everyday language.
 
 Admin role is re-read from the database on every privileged request, so revoking an account's role takes effect immediately even if its cookie is still valid.
 
-**Known limitation**: concurrent admin edits are last-write-wins — `PUT /api/semesters` does not check whether the data changed since it was loaded. Acceptable for a small admin team; would need an optimistic-concurrency check (e.g. a version column) before opening the dashboard to many simultaneous editors.
+**Concurrent admin edits**: each semester carries a `version` counter covering itself, its courses and its books. `PUT /api/semesters` sends back the version the dashboard loaded; the guard is evaluated inside the same statement as the write (a CTE), so two admins saving at once cannot both succeed. If any semester's version has moved, nothing is written — the save is all-or-nothing rather than half-applied — and the response is 409 carrying the current curriculum, which the client adopts so the admin can re-apply their edit against what actually exists. Adding or deleting a course bumps the parent semester's version for the same reason.
 
 ### Key Design Patterns
 
