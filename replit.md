@@ -29,34 +29,49 @@ Preferred communication style: Simple, everyday language.
 
 **Server Framework**: Express.js with TypeScript running on Node.js.
 
-**API Pattern**: RESTful API design with routes prefixed under `/api`. Currently uses an in-memory storage implementation (MemStorage class) with an abstraction layer (IStorage interface) designed to be replaced with database operations.
+**API Pattern**: RESTful API under `/api`, defined once in `server/routes.ts` and backed by Postgres through `server/storage.ts`. Requests that fall through the router get a JSON 404 so the client never receives HTML where it expects JSON.
 
-**Session Management**: Prepared for session-based authentication using connect-pg-simple for PostgreSQL session storage.
+**Deployment Targets**: The same Express app runs in two shapes:
+- `server/index.ts` — long-running process serving API + client (local, Replit)
+- `api/[...path].ts` — Vercel serverless function serving the API only; the client is served from Vercel's CDN
 
-**Build Process**: 
+`server/app.ts` builds the app both share. See `DEPLOY.md` for the Vercel setup.
+
+**Session Management**: Stateless JWT in an httpOnly, SameSite=Lax cookie (`server/auth.ts`). Memory-backed sessions cannot work on serverless, where each request may hit a different instance.
+
+**Build Process**:
 - Client built with Vite to `dist/public`
-- Server bundled with esbuild to `dist/index.js`
-- Development uses tsx for TypeScript execution
+- Server bundled with esbuild to `dist/index.js` (non-Vercel deploys only)
+- Development uses tsx for TypeScript execution; `.env` is loaded via `server/env.ts`
 
 ### Data Architecture
 
-**Schema Design**: Uses Drizzle ORM with PostgreSQL dialect. Current schema includes a users table with UUID primary keys. The schema is designed to be extended with tables for courses, enrollments, and progress tracking.
+**Schema Design**: Drizzle ORM with PostgreSQL. Tables: `users`, `semesters`, `courses`, `books`, `enrollments`. Curriculum ids are fixed values from `shared/data.ts` rather than sequences, so seeding is reproducible.
 
-**Type System**: Shared TypeScript types between client and server in the `/shared` directory, including:
-- Course and Semester data structures
-- User authentication types
-- Zod schemas for validation via drizzle-zod
+**Database Driver**: `server/db.ts` selects the driver from the connection string — Neon's HTTP driver for `*.neon.tech` (stateless, safe across serverless cold starts), node-postgres for any other Postgres. Neither uses interactive transactions, so every write is a single statement.
 
-**Data Flow**: Currently uses mock data (INITIAL_SEMESTERS in shared/data.ts) stored in React Context. Designed to transition to API-driven data fetching with TanStack Query.
+**Type System**: Shared TypeScript types between client and server in `/shared`:
+- `shared/types.ts` — client-facing shapes (the `User` type deliberately has no password field)
+- `shared/schema.ts` — Drizzle tables plus the Zod schemas that validate every request body
+
+**Data Flow**: The curriculum and session both come from the API via TanStack Query (`DataContext`, `AuthContext`). `shared/data.ts` is now seed input only and is no longer bundled into the client.
 
 ### Authentication & Authorization
 
-**Authentication Strategy**: Session-based authentication pattern (not fully implemented). Uses password-based login with role-based access control (student/admin roles).
+**Authentication Strategy**: Password login with scrypt-hashed passwords (`node:crypto`), JWT session cookie, and role-based access control (student/admin).
+
+**Brute-force protection**: A known account locks for 15 minutes after 5 consecutive failed logins (`users.failedAttempts`/`lockedUntil`, `server/storage.ts`). `/api/auth/login` and `/api/auth/signup` are also throttled per IP (`server/rateLimit.ts`, backed by the `rate_limits` table) to blunt credential stuffing and signup spam.
+
+**Password recovery**: No email provider is configured, so forgotten passwords are admin-mediated — the admin dashboard's user list can generate a one-time temporary password (`POST /api/admin/users/:id/reset-password`), returned once and never stored in plaintext.
 
 **Authorization Levels**:
-- Public: Landing page, course browsing
-- Student: Course enrollment, progress tracking
-- Admin: Content management, user administration
+- Public: Landing page, course browsing, `GET /api/semesters`
+- Student: Course enrollment, marking a course complete (`PATCH /api/enrollments/:courseId`)
+- Admin: Content management via `PUT /api/semesters`, plus creating/deleting semesters and courses (`/api/admin/semesters*`, `/api/admin/courses/:id` — deleting one with existing enrollments requires `?force=true`) and user management (`/api/admin/users*`)
+
+Admin role is re-read from the database on every privileged request, so revoking an account's role takes effect immediately even if its cookie is still valid.
+
+**Known limitation**: concurrent admin edits are last-write-wins — `PUT /api/semesters` does not check whether the data changed since it was loaded. Acceptable for a small admin team; would need an optimistic-concurrency check (e.g. a version column) before opening the dashboard to many simultaneous editors.
 
 ### Key Design Patterns
 

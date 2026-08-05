@@ -28,11 +28,23 @@ export interface Semester {
   };
 }
 
+/** The user as it is sent to the browser — never carries the password hash. */
 export interface User {
   id: string;
   email: string;
   name: string;
-  password: string;
   role: 'student' | 'admin';
   enrolledCourses: number[];
+  /** Subset of enrolledCourses the student has marked as finished. */
+  completedCourses: number[];
+}
+
+/** Row shape for the admin user management list — no password, ever. */
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  name: string;
+  role: 'student' | 'admin';
+  createdAt: string;
+  enrolledCount: number;
 }
